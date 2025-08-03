@@ -58,7 +58,7 @@ func decodeList(s string) ([]any, int, error) {
 	if len(s) < 2 {
 		return nil, -1, fmt.Errorf("too short bencoded list: %v", s)
 	}
-	var res []any
+	var res = []any{}
 	if s[len(s)-1] != 'e' {
 		return nil, -1, fmt.Errorf("list not ends with 'e' %v", s)
 	}
