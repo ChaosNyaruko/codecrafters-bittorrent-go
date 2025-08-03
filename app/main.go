@@ -13,22 +13,27 @@ import (
 // Ensures gofmt doesn't remove the "os" encoding/json import (feel free to remove this!)
 var _ = json.Marshal
 
-func decodeBencode(bencodedString string) (any, error) {
+func decode(bencodedString string) (any, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
-		s, _, err := decodeString(bencodedString)
-		return s, err
+		s, j, err := decodeString(bencodedString)
+		return s, j, err
 	} else if rune(bencodedString[0]) == 'i' { // i for integer
-		i, _, err := decodeInteger(bencodedString)
-		return i, err
+		i, j, err := decodeInteger(bencodedString)
+		return i, j, err
 	} else if rune(bencodedString[0]) == 'l' { // l for list
-		str, _, err := decodeList(bencodedString)
-		return str, err
+		str, j, err := decodeList(bencodedString)
+		return str, j, err
 	} else if bencodedString[0] == 'd' { // d for dictionary
-		m, _, err := decodeDict(bencodedString)
-		return m, err
+		m, j, err := decodeDict(bencodedString)
+		return m, j, err
 	} else {
-		return "", fmt.Errorf("Only strings are supported at the moment")
+		return "", -1, fmt.Errorf("Only strings are supported at the moment")
 	}
+}
+
+func decodeBencode(bencodedString string) (any, error) {
+	res, _, err := decode(bencodedString)
+	return res, err
 }
 
 // Example:
@@ -48,6 +53,7 @@ func decodeString(bencodedString string) (string, int, error) {
 	lengthStr := bencodedString[:firstColonIndex]
 
 	length, err := strconv.Atoi(lengthStr)
+	log.Printf("decode string: %q, %s, %d", bencodedString, lengthStr, length)
 	if err != nil {
 		return "", -1, fmt.Errorf("decode string %q Atoi lengthStr:%v err: %v", bencodedString, lengthStr, err)
 	}
@@ -75,7 +81,7 @@ func decodeDict(s string) (map[string]any, int, error) {
 				return nil, -1, fmt.Errorf("decode key err: %v, %q", err, s[i:])
 			}
 			i += j + 1
-			value, err := decodeBencode(s[i:])
+			value, j, err := decode(s[i:])
 			if err != nil {
 				return nil, -1, fmt.Errorf("decode value err: %v, %q", err, s[i:])
 			}
