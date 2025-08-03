@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"unicode"
 	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
@@ -185,7 +186,8 @@ func main() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
 		}
-		fmt.Printf("Tracker URL: %s\nLength: %d\nInfo Hash: %x\n", t.Tracker, t.Length, t.Hash)
+		fmt.Printf("Tracker URL: %s\nLength: %d\nInfo Hash: %x\nPiece Length: %d\nPiece Hashes:\n%s\n",
+			t.Tracker, t.Length, t.Hash, t.PieceLength, strings.Join(t.PieceHashes, "\n"))
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)

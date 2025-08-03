@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -10,13 +11,16 @@ import (
 )
 
 type Torrent struct {
-	Tracker string
-	Length  int
-	Hash    [20]byte
+	Tracker     string
+	Length      int
+	Hash        [20]byte
+	PieceLength int
+	PieceHashes []string
 }
 
 func parseTorrentFile(f string) (Torrent, error) {
 	t := Torrent{}
+	t.PieceHashes = make([]string, 0)
 	bs, err := os.ReadFile(f)
 	if err != nil {
 		return t, err
@@ -39,6 +43,16 @@ func parseTorrentFile(f string) (Torrent, error) {
 	}
 	t.Hash = sha1.Sum([]byte(encInfo))
 	log.Print(len(t.Hash))
+
+	t.PieceLength = info["piece length"].(int)
+	hashes := []byte(info["pieces"].(string))
+	if len(hashes)%20 != 0 {
+		return t, fmt.Errorf("concatenated pieces length should be multiples of 20")
+	}
+	for i := 0; i < len(hashes); i += 20 {
+		h := hashes[i : i+20]
+		t.PieceHashes = append(t.PieceHashes, hex.EncodeToString(h))
+	}
 
 	return t, nil
 }
