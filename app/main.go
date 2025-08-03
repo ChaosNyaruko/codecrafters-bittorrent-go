@@ -71,7 +71,10 @@ func decodeDict(s string) (map[string]any, int, error) {
 		return nil, -1, fmt.Errorf("too short bencoded dict: %v", s)
 	}
 	var res = make(map[string]any)
-	i += 1 // 'd'
+	if s[0] != 'd' {
+		return nil, -1, fmt.Errorf("dict should start with 'd', %q", s)
+	}
+	i += 1 // eat 'd'
 	for i < len(s) {
 		log.Printf("dict: %v", s[i:])
 		switch {
@@ -165,9 +168,9 @@ func decodeInteger(s string) (int, int, error) {
 func main() {
 	command := os.Args[1]
 
-	if command == "decode" {
+	switch command {
+	case "decode":
 		bencodedValue := os.Args[2]
-
 		decoded, err := decodeBencode(bencodedValue)
 		if err != nil {
 			fmt.Println(err)
@@ -176,7 +179,14 @@ func main() {
 
 		jsonOutput, _ := json.Marshal(decoded)
 		fmt.Println(string(jsonOutput))
-	} else {
+	case "info":
+		torrent := os.Args[2]
+		t, err := parseTorrentFile(torrent)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
+		}
+		fmt.Printf("Tracker URL: %s\nLength: %d\n", t.Tracker, t.Length)
+	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
