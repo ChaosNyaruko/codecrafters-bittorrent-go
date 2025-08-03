@@ -13,7 +13,7 @@ import (
 // Ensures gofmt doesn't remove the "os" encoding/json import (feel free to remove this!)
 var _ = json.Marshal
 
-func decodeBencode(bencodedString string) (interface{}, error) {
+func decodeBencode(bencodedString string) (any, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
 		s, _, err := decodeString(bencodedString)
 		return s, err
