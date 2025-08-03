@@ -185,9 +185,26 @@ func main() {
 		t, err := parseTorrentFile(torrent)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
+			os.Exit(1)
 		}
 		fmt.Printf("Tracker URL: %s\nLength: %d\nInfo Hash: %x\nPiece Length: %d\nPiece Hashes:\n%s\n",
 			t.Tracker, t.Length, t.Hash, t.PieceLength, strings.Join(t.PieceHashes, "\n"))
+
+	case "peers":
+		torrent := os.Args[2]
+		t, err := parseTorrentFile(torrent)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
+		}
+		peers, err := getPeersFromTracker(t)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "getPeersFromTracker err: %v", err)
+			os.Exit(1)
+		}
+		for _, p := range peers {
+			fmt.Printf("%s\n", p)
+		}
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
