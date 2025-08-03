@@ -23,6 +23,9 @@ func decodeBencode(bencodedString string) (any, error) {
 	} else if rune(bencodedString[0]) == 'l' { // l for list
 		str, _, err := decodeList(bencodedString)
 		return str, err
+	} else if bencodedString[0] == 'd' { // d for dictionary
+		m, _, err := decodeDict(bencodedString)
+		return m, err
 	} else {
 		return "", fmt.Errorf("Only strings are supported at the moment")
 	}
@@ -48,8 +51,44 @@ func decodeString(bencodedString string) (string, int, error) {
 	if err != nil {
 		return "", -1, fmt.Errorf("decode string %q Atoi lengthStr:%v err: %v", bencodedString, lengthStr, err)
 	}
+	if firstColonIndex+1+length > len(bencodedString) {
+		return "", -1, fmt.Errorf("too short string for %q/[%d, %d]", bencodedString, firstColonIndex+1, length)
+	}
 
 	return bencodedString[firstColonIndex+1 : firstColonIndex+1+length], firstColonIndex + length, nil
+}
+
+func decodeDict(s string) (map[string]any, int, error) {
+	var i = 0
+	log.Printf("decodeDict %v", s)
+	if len(s) < 2 {
+		return nil, -1, fmt.Errorf("too short bencoded dict: %v", s)
+	}
+	var res = make(map[string]any)
+	i += 1 // 'd'
+	for i < len(s) {
+		log.Printf("dict: %v", s[i:])
+		switch {
+		case unicode.IsDigit(rune(s[i])):
+			key, j, err := decodeString(s[i:])
+			if err != nil {
+				return nil, -1, fmt.Errorf("decode key err: %v, %q", err, s[i:])
+			}
+			i += j + 1
+			value, err := decodeBencode(s[i:])
+			if err != nil {
+				return nil, -1, fmt.Errorf("decode value err: %v, %q", err, s[i:])
+			}
+			i += j + 1
+			res[key] = value
+		default:
+			if i >= len(s) || s[i] != 'e' {
+				return res, i, fmt.Errorf("invalid dict, should end with 'e': %s", s[i:])
+			}
+			return res, i, nil
+		}
+	}
+	return res, len(s), nil
 }
 
 func decodeList(s string) ([]any, int, error) {
@@ -59,11 +98,8 @@ func decodeList(s string) ([]any, int, error) {
 		return nil, -1, fmt.Errorf("too short bencoded list: %v", s)
 	}
 	var res = []any{}
-	if s[len(s)-1] != 'e' {
-		return nil, -1, fmt.Errorf("list not ends with 'e' %v", s)
-	}
 	i = 1
-	for len(s) > 0 {
+	for i < len(s) {
 		switch {
 		case s[i] == 'i':
 			if n, j, err := decodeInteger(s[i:]); err != nil {
@@ -90,7 +126,7 @@ func decodeList(s string) ([]any, int, error) {
 				log.Printf("add %v, remain: %v", str, s[i:])
 			}
 		default:
-			if len(s) < 1 || s[i] != 'e' {
+			if i >= len(s) || s[i] != 'e' {
 				return res, i, fmt.Errorf("invalid list, should end with 'e': %s", s[i:])
 			}
 			return res, i, nil
@@ -116,6 +152,7 @@ func decodeInteger(s string) (int, int, error) {
 	if err != nil {
 		return 0, -1, fmt.Errorf("bad number strings: %v", number)
 	}
+	log.Printf("decoded integer: %s", number)
 	return n, endAt, nil
 }
 
