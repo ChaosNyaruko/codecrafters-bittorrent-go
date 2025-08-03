@@ -185,7 +185,7 @@ func main() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
 		}
-		fmt.Printf("Tracker URL: %s\nLength: %d\n", t.Tracker, t.Length)
+		fmt.Printf("Tracker URL: %s\nLength: %d\nInfo Hash: %x\n", t.Tracker, t.Length, t.Hash)
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
