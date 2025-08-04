@@ -57,16 +57,16 @@ func (msg *PeerMessage) Pack() []byte {
 
 func (msg *PeerMessage) Unpack(r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &msg.Length); err != nil {
-		return err
+		return fmt.Errorf("unpack length: %v", err)
 	}
 	log.Printf("read msg len: %d", msg.Length)
 	if err := binary.Read(r, binary.BigEndian, &msg.MsgID); err != nil {
-		return err
+		return fmt.Errorf("unpack msgid: %v", err)
 	}
 	log.Printf("read msg id: %d", msg.MsgID)
 	body := make([]byte, msg.Length-1)
 	if err := binary.Read(r, binary.BigEndian, &body); err != nil {
-		return err
+		return fmt.Errorf("unpack body: %v", err)
 	}
 	log.Printf("read msg body: %d", len(msg.Payload))
 	msg.Payload = body
