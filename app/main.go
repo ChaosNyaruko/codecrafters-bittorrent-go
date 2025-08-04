@@ -216,11 +216,50 @@ func main() {
 			os.Exit(1)
 		}
 		for _, p := range peers {
-			if err := handShake(p.String(), t); err != nil {
+			if c, err := handShake(p.String(), t); err != nil {
 				fmt.Fprintf(os.Stderr, "try handshaking with %s err: %v", p, err)
 				os.Exit(1)
+			} else {
+				c.Close()
 			}
 		}
+
+	case "download_piece":
+		if os.Args[2] != "-o" {
+			fmt.Fprintf(os.Stderr, "-o should be specified, got: %s", os.Args[2])
+			os.Exit(1)
+		}
+		fname := os.Args[3]
+		torrent := os.Args[4]
+		pstr := os.Args[5]
+		pIdx, err := strconv.Atoi(pstr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "piece index should be an integer, but got %s", pstr)
+			os.Exit(1)
+		}
+
+		t, err := parseTorrentFile(torrent)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
+		}
+		peers, err := getPeersFromTracker(t)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "getPeersFromTracker err: %v", err)
+			os.Exit(1)
+		}
+		p := peers[0]
+		c, err := handShake(p.String(), t)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "try handshaking with %s err: %v", p, err)
+			os.Exit(1)
+		}
+		log.Printf("handshake sucess, start downloading...")
+		if _, err := c.downloadPiece(pIdx, fname); err != nil {
+			fmt.Fprintf(os.Stderr, "download piece err: %v", err)
+			os.Exit(1)
+		}
+		c.Close()
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
