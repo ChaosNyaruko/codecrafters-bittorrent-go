@@ -111,6 +111,7 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	log.Printf("send interested msg: %d", n)
 
 	for {
+		msg := PeerMessage{}
 		if err := msg.Unpack(c.mainConn); err != nil {
 			return nil, err
 		}
@@ -146,6 +147,7 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 		log.Printf("send request msg [%d:%d/%d]: %d, pkt: %v", pIdx, blkId, blkCnt, n, pkt)
 
 		for {
+			msg := PeerMessage{}
 			if err := msg.Unpack(c.mainConn); err != nil {
 				return nil, err
 			}
