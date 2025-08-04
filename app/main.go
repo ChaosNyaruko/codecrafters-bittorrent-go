@@ -204,7 +204,23 @@ func main() {
 		for _, p := range peers {
 			fmt.Printf("%s\n", p)
 		}
-
+	case "handshake":
+		torrent := os.Args[2]
+		t, err := parseTorrentFile(torrent)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "parse torrent file [%v] error: %v", torrent, err)
+		}
+		peers, err := getPeersFromTracker(t)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "getPeersFromTracker err: %v", err)
+			os.Exit(1)
+		}
+		for _, p := range peers {
+			if err := handShake(p.String(), t); err != nil {
+				fmt.Fprintf(os.Stderr, "try handshaking with %s err: %v", p, err)
+				os.Exit(1)
+			}
+		}
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)

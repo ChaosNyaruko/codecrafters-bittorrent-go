@@ -12,7 +12,6 @@ import (
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 type Torrent struct {
@@ -144,12 +143,11 @@ func (p Peer) String() string {
 }
 
 func getPeersFromTracker(t Torrent) ([]Peer, error) {
-	id := strings.Repeat("1234567890", 2)
 	tracker := t.Tracker
 	params := url.Values{}
 
 	params.Set("info_hash", string(t.Hash[:]))
-	params.Set("peer_id", id)
+	params.Set("peer_id", myID)
 	params.Set("port", "6881")
 	params.Set("uploaded", "0")
 	params.Set("downloaded", "0")
