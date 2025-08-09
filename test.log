@@ -1,4 +1,0 @@
-2025/08/09 15:15:46 GET from "http://bittorrent-test-tracker.codecrafters.io/announce?compact=1&downloaded=0&info_hash=%D6%9F%91%E6%B2%AELT%24h%D1%07%3Aq%D4%EA%13%87%9A%7F&left=92063&peer_id=12345678901234567890&port=6881&uploaded=0"
-2025/08/09 15:15:47 interval: 60, peers: •Ë&§»È•Ë)I»Ê•Ë#r…K/18/18
-2025/08/09 15:15:47 torrent info: {Tracker:http://bittorrent-test-tracker.codecrafters.io/announce Length:92063 Hash:[214 159 145 230 178 174 76 84 36 104 209 7 58 113 212 234 19 135 154 127] PieceLength:32768 PieceHashes:[e876f67a2a8886e8f36b136726c30fa29703022d 6e2275e604a0766656736e81ff10b55204ad8d35 f00d937a0213df1982bc8d097227ad9e909acc17]}
-2025/08/09 15:15:47 piece downloader: pIdx=0, blkCnt=0, pLen=32768

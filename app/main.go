@@ -14,9 +14,9 @@ import (
 // Ensures gofmt doesn't remove the "os" encoding/json import (feel free to remove this!)
 var _ = json.Marshal
 
-// func init() {
-// 	log.SetOutput(io.Discard)
-// }
+func init() {
+	// log.SetOutput(io.Discard)
+}
 
 func decode(bencodedString string) (any, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
