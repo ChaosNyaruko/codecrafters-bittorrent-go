@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 // TODO: randomize it
@@ -50,6 +51,7 @@ func (p *Peer) readMsg() (*PeerMessage, error) {
 }
 
 func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
+	p.conn.SetDeadline(time.Now().Add(2 * time.Minute))
 	pIdx, pLen, blkId := task.pIdx, task.pLen, task.idx
 	pkt := requestPkt(pIdx, blkId, pLen)
 	_, err := p.conn.Write(pkt)
@@ -83,7 +85,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 
 func (p *Peer) connect(hash []byte) error {
 	err := p.handshake(hash)
-	log.Printf("connecting %v->%v, err: %v", p.conn.LocalAddr(), p.conn.RemoteAddr, err)
+	log.Printf("connecting %v->%v, err: %v", p.conn.LocalAddr(), p.conn.RemoteAddr(), err)
 	if err != nil {
 		p.Close()
 		return err
@@ -136,6 +138,7 @@ func (p *Peer) handshake(hash []byte) error {
 	if err != nil {
 		return fmt.Errorf("dial tcp error: %v", err)
 	}
+	conn.SetDeadline(time.Now().Add(2 * time.Minute))
 	p.conn = conn
 
 	pkt := handshakePkt(hash[:])
