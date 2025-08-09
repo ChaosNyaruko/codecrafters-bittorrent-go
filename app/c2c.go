@@ -208,6 +208,9 @@ func (pd *PieceDownloader) run() error {
 	blkCnt := int(math.Ceil(float64(pd.t.PieceLength) / float64(blockSize)))
 	var blkId = 0
 	for p := range pd.pp.available {
+		if blkId == blkCnt {
+			break
+		}
 		if blk, err := p.downloadBlk(pd.idx, pd.t.PieceLength, blkId, blkCnt); err != nil {
 			p.Close()
 			pd.pp.pending <- p
@@ -215,10 +218,7 @@ func (pd *PieceDownloader) run() error {
 			// TODO: concurrency
 			pd.piece = append(pd.piece, blk...)
 			pd.pp.available <- p
-		}
-		blkId++
-		if blkId == blkCnt {
-			break
+			blkId++
 		}
 	}
 	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.t.PieceLength)
