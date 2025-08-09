@@ -335,16 +335,16 @@ const (
 
 func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	pp := PeerPool{
-		available: make(chan *Peer, len(c.targets)),
-		pending:   make(chan *Peer, len(c.targets)),
+		available: make(chan *Peer, 5),
+		pending:   make(chan *Peer, 5),
 		close:     make(chan int),
 		hash:      c.t.Hash[:],
 	}
 
 	// TODO: multi targets
-	for i := 0; i < len(c.targets); i++ {
+	for i := range 5 {
 		p := &Peer{
-			addr: c.targets[i].String(),
+			addr: c.targets[i%len(c.targets)].String(),
 			conn: nil,
 			id:   [20]byte{},
 		}
