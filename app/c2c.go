@@ -64,7 +64,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 			return nil, err
 		}
 		if err != nil {
-			log.Printf("readMsg err: %v", err)
+			log.Printf("readMsg err: %v->%v: %v", p.conn.LocalAddr(), p.conn.RemoteAddr(), err)
 			continue
 		}
 		switch msg.MsgID {
@@ -309,14 +309,14 @@ func (msg *PeerMessage) Pack() []byte {
 
 func (msg *PeerMessage) Unpack(r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &msg.Length); err != nil {
-		return fmt.Errorf("unpack length: %v", err)
+		return err
 	}
 	if err := binary.Read(r, binary.BigEndian, &msg.MsgID); err != nil {
-		return fmt.Errorf("unpack msgid: %v", err)
+		return err
 	}
 	body := make([]byte, msg.Length-1)
 	if err := binary.Read(r, binary.BigEndian, &body); err != nil {
-		return fmt.Errorf("unpack body: %v", err)
+		return err
 	}
 	msg.Payload = body
 	return nil
