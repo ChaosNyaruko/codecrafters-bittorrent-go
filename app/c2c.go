@@ -49,26 +49,29 @@ func (p *Peer) readMsg() (*PeerMessage, error) {
 	return msg, nil
 }
 
-func (p *Peer) downloadBlk(pIdx, pLen, blkId, blkCnt int) ([]byte, error) {
+func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
+	pIdx, pLen, blkId := task.pIdx, task.pLen, task.idx
 	pkt := requestPkt(pIdx, blkId, pLen)
-	n, err := p.conn.Write(pkt)
+	_, err := p.conn.Write(pkt)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("send request msg [%d:%d/%d]: %d, pkt: %v", pIdx, blkId, blkCnt, n, pkt)
+	log.Printf("try donwloading %+v", task)
 	for {
 		msg, err := p.readMsg()
 		if err != nil {
 			return nil, err
 		}
-		if msg.MsgID == piece {
+		switch msg.MsgID {
+		case piece:
 			log.Printf("recevied piece[%d vs %d], begin: %d(%d), block_len:%d",
 				pIdx, binary.BigEndian.Uint32(msg.Payload[:4]),
 				binary.BigEndian.Uint32(msg.Payload[4:8]), blkId,
 				len(msg.Payload[8:]))
 			return msg.Payload[8:], nil
-		} else if msg.MsgID == choke {
+		case choke:
 			return nil, fmt.Errorf("choked by %v", p.addr)
+		default:
 		}
 	}
 }
@@ -147,7 +150,7 @@ func (p *Peer) handshake(hash []byte) error {
 		return err
 	}
 
-	resp.MagicHeader = string(magic)
+	// resp.MagicHeader = string(magic)
 	if err := binary.Read(conn, binary.BigEndian, resp.Reserved[:]); err != nil {
 		return err
 	}
@@ -157,6 +160,8 @@ func (p *Peer) handshake(hash []byte) error {
 	if err := binary.Read(conn, binary.BigEndian, resp.PeerID[:]); err != nil {
 		return err
 	}
+
+	copy(p.id[:], resp.PeerID[:])
 
 	return nil
 }
@@ -194,33 +199,80 @@ func (pp *PeerPool) run() error {
 	}()
 
 	<-pp.close
-	return pp.clean()
+	err := pp.clean()
+	log.Printf("cleanup PeerPool")
+	return err
 }
 
 type PieceDownloader struct {
-	pp    *PeerPool
-	piece []byte
-	t     Torrent
-	idx   int
+	pp          *PeerPool
+	piece       []byte
+	t           Torrent
+	idx         int // piece idx
+	pendindTask chan blockTask
+	done        chan int
+}
+
+type blockTask struct {
+	idx  int
+	cnt  int
+	pIdx int
+	pLen int
 }
 
 func (pd *PieceDownloader) run() error {
 	blkCnt := int(math.Ceil(float64(pd.t.PieceLength) / float64(blockSize)))
-	var blkId = 0
-	for p := range pd.pp.available {
-		if blkId == blkCnt {
-			break
-		}
-		if blk, err := p.downloadBlk(pd.idx, pd.t.PieceLength, blkId, blkCnt); err != nil {
-			p.Close()
-			pd.pp.pending <- p
-		} else {
-			// TODO: concurrency
-			pd.piece = append(pd.piece, blk...)
-			pd.pp.available <- p
-			blkId++
+	pd.pendindTask = make(chan blockTask, blkCnt)
+	pd.done = make(chan int)
+	pd.piece = make([]byte, pd.t.PieceLength)
+
+	for i := range 5 {
+		go func() {
+			log.Printf("downloader %d started...", i)
+			defer log.Printf("downloader %d stopped...", i)
+			for b := range pd.pendindTask {
+				p := <-pd.pp.available
+				if blk, err := p.downloadBlk(b); err != nil {
+					p.Close()
+					pd.pp.pending <- p
+					pd.pendindTask <- b
+				} else {
+					l := b.idx * blockSize
+					size := blockSize
+					if b.idx == blkCnt-1 {
+						size = pd.t.PieceLength - b.idx*blockSize
+					}
+					if size != len(blk) {
+						log.Fatalf("??? size: %d, len(blk): %d", size, blk)
+					}
+					copy(pd.piece[l:l+size], blk)
+					log.Printf("blk %v/%v finished, [%v:%v]", b.idx, blkCnt, l, l+size)
+					pd.pp.available <- p
+					pd.done <- 1
+				}
+			}
+		}()
+	}
+
+	for i := range blkCnt {
+		pd.pendindTask <- blockTask{
+			idx:  i,
+			cnt:  blkCnt,
+			pIdx: pd.idx,
+			pLen: pd.t.PieceLength,
 		}
 	}
+
+	doneCnt := 0
+	for d := range pd.done {
+		doneCnt += d
+		log.Printf("blk tasks finished: %d/%d", doneCnt, blkCnt)
+		if doneCnt == blkCnt {
+			break
+		}
+	}
+	close(pd.done)
+	close(pd.pendindTask)
 	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.t.PieceLength)
 
 	h := sha1.Sum(pd.piece)
@@ -290,7 +342,7 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	}
 
 	// TODO: multi targets
-	for i := 0; i < 1; i++ {
+	for i := 0; i < len(c.targets); i++ {
 		p := &Peer{
 			addr: c.targets[i].String(),
 			conn: nil,
@@ -338,6 +390,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// TODO: duplicate code
 func (c *Client) handShake(target string) error {
 	conn, err := net.Dial("tcp", target)
 	if err != nil {
@@ -363,7 +416,7 @@ func (c *Client) handShake(target string) error {
 		return err
 	}
 
-	resp.MagicHeader = string(magic)
+	// resp.MagicHeader = string(magic)
 	if err := binary.Read(conn, binary.BigEndian, resp.Reserved[:]); err != nil {
 		return err
 	}
@@ -375,9 +428,5 @@ func (c *Client) handShake(target string) error {
 	}
 
 	fmt.Printf("Peer ID: %x\n", resp.PeerID)
-	return nil
-}
-
-func (c *Client) run() error {
 	return nil
 }
