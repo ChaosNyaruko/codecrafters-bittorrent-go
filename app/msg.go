@@ -34,7 +34,7 @@ func requestPkt(pIdx, blkId, pieceLen int) []byte {
 	if blkId == blkCnt-1 {
 		size = pieceLen - blkId*blockSize
 	}
-	msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(size))
 	log.Printf("requestPkt: [%d, %d, %d, %d]", pIdx, blkId, blkId*blockSize, size)
+	msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(size))
 	return msg.Pack()
 }

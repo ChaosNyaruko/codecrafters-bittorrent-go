@@ -11,7 +11,11 @@ import (
 	"net"
 	"os"
 	"strings"
-	"time"
+)
+
+const (
+	workingThreads = 1
+	connPerTarget  = 1
 )
 
 // TODO: randomize it
@@ -42,16 +46,16 @@ func (p *Peer) Close() {
 	p.conn.Close()
 }
 
-func (p *Peer) readMsg() (*PeerMessage, error) {
+func (p *Peer) readMsg(name string) (*PeerMessage, error) {
 	msg := &PeerMessage{}
-	if err := msg.Unpack(p.conn); err != nil {
+	if err := msg.Unpack(name, p.conn); err != nil {
 		return nil, err
 	}
 	return msg, nil
 }
 
 func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
-	p.conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	// p.conn.SetDeadline(time.Now().Add(2 * time.Minute))
 	pIdx, pLen, blkId := task.pIdx, task.pLen, task.idx
 	pkt := requestPkt(pIdx, blkId, pLen)
 	_, err := p.conn.Write(pkt)
@@ -60,7 +64,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 	}
 	log.Printf("try donwloading %+v", task)
 	for {
-		msg, err := p.readMsg()
+		msg, err := p.readMsg("piece")
 		if err == io.EOF {
 			log.Printf("[request]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
 			return nil, err
@@ -80,7 +84,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 			return nil, fmt.Errorf("choked by %v", p.addr)
 		default:
 		}
-		p.conn.SetDeadline(time.Time{})
+		// p.conn.SetDeadline(time.Time{})
 	}
 }
 
@@ -93,7 +97,7 @@ func (p *Peer) connect(hash []byte) error {
 	}
 
 	for {
-		msg, err := p.readMsg()
+		msg, err := p.readMsg("bitfield")
 		if err == io.EOF {
 			log.Printf("[connect]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
 			return err
@@ -117,7 +121,7 @@ func (p *Peer) connect(hash []byte) error {
 	}
 
 	for {
-		msg, err := p.readMsg()
+		msg, err := p.readMsg("unchoke")
 		if err != nil {
 			return err
 		}
@@ -139,7 +143,7 @@ func (p *Peer) handshake(hash []byte) error {
 	if err != nil {
 		return fmt.Errorf("dial tcp error: %v", err)
 	}
-	conn.SetDeadline(time.Time{})
+	// conn.SetDeadline(time.Time{})
 	p.conn = conn
 
 	pkt := handshakePkt(hash[:])
@@ -170,6 +174,7 @@ func (p *Peer) handshake(hash []byte) error {
 	}
 
 	copy(p.id[:], resp.PeerID[:])
+	log.Printf("handshake: %v, %v", p.id, p.addr)
 
 	return nil
 }
@@ -217,6 +222,8 @@ type PieceDownloader struct {
 	piece       []byte
 	t           Torrent
 	idx         int // piece idx
+	pieceLen    int
+	blkCnt      int
 	pendindTask chan blockTask
 	done        chan int
 }
@@ -229,12 +236,23 @@ type blockTask struct {
 }
 
 func (pd *PieceDownloader) run() error {
-	blkCnt := int(math.Ceil(float64(pd.t.PieceLength) / float64(blockSize)))
-	pd.pendindTask = make(chan blockTask, blkCnt)
+	pieceCnt := int(math.Ceil(float64(pd.t.Length) / float64(pd.t.PieceLength)))
+	if pieceCnt != len(pd.t.PieceHashes) {
+		return fmt.Errorf("unmatched pieceCnt: %v/%v", pieceCnt, len(pd.t.PieceHashes))
+	}
+	pLen := pd.t.PieceLength
+	if pd.idx == pieceCnt-1 {
+		pLen = pd.t.Length - (pieceCnt-1)*pd.t.PieceLength
+	}
+	pd.blkCnt = int(math.Ceil(float64(pLen) / float64(blockSize)))
+	pd.pieceLen = pLen
+	pd.pendindTask = make(chan blockTask, pd.blkCnt)
 	pd.done = make(chan int)
-	pd.piece = make([]byte, pd.t.PieceLength)
+	pd.piece = make([]byte, pLen)
 
-	for i := range 10 {
+	log.Printf("piece downloader: pIdx=%d, blkCnt=%d, pLen=%d, bsize=%d", pd.idx, pd.blkCnt, pd.pieceLen, blockSize)
+
+	for i := range workingThreads {
 		go func() {
 			log.Printf("downloader %d started...", i)
 			defer log.Printf("downloader %d stopped...", i)
@@ -247,14 +265,14 @@ func (pd *PieceDownloader) run() error {
 				} else {
 					l := b.idx * blockSize
 					size := blockSize
-					if b.idx == blkCnt-1 {
-						size = pd.t.PieceLength - b.idx*blockSize
+					if b.idx == pd.blkCnt-1 {
+						size = pLen - b.idx*blockSize
 					}
 					if size != len(blk) {
 						log.Fatalf("??? size: %d, len(blk): %d", size, blk)
 					}
 					copy(pd.piece[l:l+size], blk)
-					log.Printf("blk %v/%v finished, [%v:%v]", b.idx, blkCnt, l, l+size)
+					log.Printf("blk %v/%v finished, [%v:%v]", b.idx, pd.blkCnt, l, l+size)
 					pd.pp.available <- p
 					pd.done <- 1
 				}
@@ -262,26 +280,26 @@ func (pd *PieceDownloader) run() error {
 		}()
 	}
 
-	for i := range blkCnt {
+	for i := range pd.blkCnt {
 		pd.pendindTask <- blockTask{
 			idx:  i,
-			cnt:  blkCnt,
+			cnt:  pd.blkCnt,
 			pIdx: pd.idx,
-			pLen: pd.t.PieceLength,
+			pLen: pLen,
 		}
 	}
 
 	doneCnt := 0
 	for d := range pd.done {
 		doneCnt += d
-		log.Printf("blk tasks finished: %d/%d", doneCnt, blkCnt)
-		if doneCnt == blkCnt {
+		log.Printf("blk tasks finished: %d/%d", doneCnt, pd.blkCnt)
+		if doneCnt == pd.blkCnt {
 			break
 		}
 	}
 	close(pd.done)
 	close(pd.pendindTask)
-	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.t.PieceLength)
+	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.pieceLen)
 
 	h := sha1.Sum(pd.piece)
 	got := hex.EncodeToString(h[:])
@@ -311,15 +329,18 @@ func (msg *PeerMessage) Pack() []byte {
 	return buf
 }
 
-func (msg *PeerMessage) Unpack(r io.Reader) error {
+func (msg *PeerMessage) Unpack(name string, r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &msg.Length); err != nil {
+		log.Printf("[%v]read length err: %v", name, err)
 		return err
 	}
 	if err := binary.Read(r, binary.BigEndian, &msg.MsgID); err != nil {
+		log.Printf("[%v]read msgid err: %v", name, err)
 		return err
 	}
 	body := make([]byte, msg.Length-1)
 	if err := binary.Read(r, binary.BigEndian, &body); err != nil {
+		log.Printf("[%v]read body err: %v", name, err)
 		return err
 	}
 	msg.Payload = body
@@ -339,6 +360,7 @@ const (
 )
 
 func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
+	log.Printf("torrent info: %+v", c.t)
 	pp := PeerPool{
 		available: make(chan *Peer, 100),
 		pending:   make(chan *Peer, 100),
@@ -348,7 +370,7 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 
 	go func() {
 		for j := range len(c.targets) {
-			for range 5 {
+			for range connPerTarget {
 				p := &Peer{
 					addr: c.targets[j].String(),
 					conn: nil,
@@ -360,10 +382,9 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	}()
 
 	pd := PieceDownloader{
-		pp:    &pp,
-		piece: make([]byte, 0, c.t.PieceLength),
-		t:     c.t,
-		idx:   pIdx,
+		pp:  &pp,
+		t:   c.t,
+		idx: pIdx,
 	}
 	go pp.run()
 
@@ -384,7 +405,7 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	if err != nil {
 		return pieceData, nil
 	}
-	log.Printf("write to %s success: %d/%d/%d", fname, wn, len(pieceData), c.t.PieceLength)
+	log.Printf("write to %s success: %d/%d/%d", fname, wn, len(pieceData), pd.pieceLen)
 
 	return pieceData, nil
 }
