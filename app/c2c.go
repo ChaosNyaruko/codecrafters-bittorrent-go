@@ -9,8 +9,8 @@ import (
 	"log"
 	"math"
 	"net"
-	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -43,7 +43,9 @@ type Peer struct {
 
 func (p *Peer) Close() {
 	log.Printf("close peer: %v", p.id)
-	p.conn.Close()
+	if p.conn != nil {
+		p.conn.Close()
+	}
 }
 
 func (p *Peer) readMsg(name string) (*PeerMessage, error) {
@@ -186,7 +188,26 @@ type PeerPool struct {
 	close     chan int
 }
 
+func (pp *PeerPool) reconnect(p *Peer) error {
+	select {
+	case <-pp.close:
+		return fmt.Errorf("reconnect err: peer pool closed")
+	case pp.pending <- p:
+	}
+	return nil
+}
+
+func (pp *PeerPool) reuse(p *Peer) error {
+	select {
+	case <-pp.close:
+		return fmt.Errorf("reuse err: peer pool closed")
+	case pp.available <- p:
+	}
+	return nil
+}
+
 func (pp *PeerPool) clean() error {
+	time.Sleep(2 * time.Second)
 	close(pp.pending)
 	close(pp.available)
 	for p := range pp.pending {
@@ -202,19 +223,20 @@ func (pp *PeerPool) clean() error {
 func (pp *PeerPool) run() error {
 	go func() {
 		for p := range pp.pending {
-			if err := p.connect(pp.hash); err != nil {
-				p.Close()
-				pp.pending <- p
-			} else {
-				pp.available <- p
+			select {
+			case <-pp.close:
+				return
+			default:
+				if err := p.connect(pp.hash); err != nil {
+					p.Close()
+					pp.reconnect(p)
+				} else {
+					pp.reuse(p)
+				}
 			}
 		}
 	}()
-
-	<-pp.close
-	err := pp.clean()
-	log.Printf("cleanup PeerPool")
-	return err
+	return nil
 }
 
 type PieceDownloader struct {
@@ -273,7 +295,9 @@ func (pd *PieceDownloader) run() error {
 					}
 					copy(pd.piece[l:l+size], blk)
 					log.Printf("blk %v/%v finished, [%v:%v]", b.idx, pd.blkCnt, l, l+size)
-					pd.pp.available <- p
+					if err := pd.pp.reuse(p); err != nil {
+						log.Printf("reuse: %v", err)
+					}
 					pd.done <- 1
 				}
 			}
@@ -359,7 +383,7 @@ const (
 	cancel
 )
 
-func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
+func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 	log.Printf("torrent info: %+v", c.t)
 	pp := PeerPool{
 		available: make(chan *Peer, 100),
@@ -376,7 +400,9 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 					conn: nil,
 					id:   [20]byte{},
 				}
-				pp.pending <- p
+				if err := pp.reconnect(p); err != nil {
+					log.Printf("reconnect: %v", err)
+				}
 			}
 		}
 	}()
@@ -388,26 +414,17 @@ func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	}
 	go pp.run()
 
-	defer func() { pp.close <- 1 }()
+	defer func() {
+		pp.close <- 1
+		pp.clean()
+		log.Printf("cleanup PeerPool")
+	}()
 
 	if err := pd.run(); err != nil {
 		return nil, err
 	}
 
-	pieceData := pd.piece
-
-	fd, err := os.Create(fname)
-	if err != nil {
-		return nil, err
-	}
-	defer fd.Close()
-	wn, err := fd.Write(pieceData)
-	if err != nil {
-		return pieceData, nil
-	}
-	log.Printf("write to %s success: %d/%d/%d", fname, wn, len(pieceData), pd.pieceLen)
-
-	return pieceData, nil
+	return pd.piece, nil
 }
 
 const blockSize = 16 * 1024
