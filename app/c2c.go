@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"time"
 )
 
 const (
@@ -420,6 +421,7 @@ func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 	go pp.run()
 
 	defer func() {
+		time.Sleep(time.Second)
 		pp.close <- 1
 	}()
 
