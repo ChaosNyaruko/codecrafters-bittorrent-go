@@ -80,6 +80,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 			return nil, fmt.Errorf("choked by %v", p.addr)
 		default:
 		}
+		p.conn.SetDeadline(time.Time{})
 	}
 }
 
@@ -138,7 +139,7 @@ func (p *Peer) handshake(hash []byte) error {
 	if err != nil {
 		return fmt.Errorf("dial tcp error: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	conn.SetDeadline(time.Time{})
 	p.conn = conn
 
 	pkt := handshakePkt(hash[:])
@@ -233,7 +234,7 @@ func (pd *PieceDownloader) run() error {
 	pd.done = make(chan int)
 	pd.piece = make([]byte, pd.t.PieceLength)
 
-	for i := range 5 {
+	for i := range 10 {
 		go func() {
 			log.Printf("downloader %d started...", i)
 			defer log.Printf("downloader %d stopped...", i)
