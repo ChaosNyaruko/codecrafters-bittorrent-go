@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"log"
 	"math"
 )
 
@@ -34,5 +35,6 @@ func requestPkt(pIdx, blkId, pieceLen int) []byte {
 		size = pieceLen - blkId*blockSize
 	}
 	msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(size))
+	log.Printf("requestPkt: [%d, %d, %d, %d]", pIdx, blkId, blkId*blockSize, size)
 	return msg.Pack()
 }
