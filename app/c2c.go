@@ -191,7 +191,8 @@ func (pp *PeerPool) reconnect(p *Peer) error {
 	select {
 	case <-pp.close:
 		return fmt.Errorf("reconnect err: peer pool closed")
-	case pp.pending <- p:
+	default:
+		pp.pending <- p
 	}
 	return nil
 }
@@ -200,13 +201,13 @@ func (pp *PeerPool) reuse(p *Peer) error {
 	select {
 	case <-pp.close:
 		return fmt.Errorf("reuse err: peer pool closed")
-	case pp.available <- p:
+	default:
+		pp.available <- p
 	}
 	return nil
 }
 
 func (pp *PeerPool) clean() error {
-	// TODO:
 	close(pp.pending)
 	close(pp.available)
 	for p := range pp.pending {
@@ -235,6 +236,8 @@ func (pp *PeerPool) run() error {
 			}
 		}
 	}()
+	<-pp.close
+	pp.clean()
 	return nil
 }
 
@@ -418,8 +421,6 @@ func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 
 	defer func() {
 		pp.close <- 1
-		pp.clean()
-		log.Printf("cleanup PeerPool")
 	}()
 
 	if err := pd.run(); err != nil {
