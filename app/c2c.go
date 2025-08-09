@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"strings"
-	"time"
 )
 
 const (
@@ -207,7 +206,7 @@ func (pp *PeerPool) reuse(p *Peer) error {
 }
 
 func (pp *PeerPool) clean() error {
-	time.Sleep(2 * time.Second)
+	// TODO:
 	close(pp.pending)
 	close(pp.available)
 	for p := range pp.pending {
@@ -269,7 +268,7 @@ func (pd *PieceDownloader) run() error {
 	pd.blkCnt = int(math.Ceil(float64(pLen) / float64(blockSize)))
 	pd.pieceLen = pLen
 	pd.pendindTask = make(chan blockTask, pd.blkCnt)
-	pd.done = make(chan int)
+	pd.done = make(chan int, pd.blkCnt)
 	pd.piece = make([]byte, pLen)
 
 	log.Printf("piece downloader: pIdx=%d, blkCnt=%d, pLen=%d, bsize=%d", pd.idx, pd.blkCnt, pd.pieceLen, blockSize)
@@ -280,6 +279,10 @@ func (pd *PieceDownloader) run() error {
 			defer log.Printf("downloader %d stopped...", i)
 			for b := range pd.pendindTask {
 				p := <-pd.pp.available
+				// if p == nil {
+				// 	log.Printf("available closed")
+				// 	return
+				// }
 				if blk, err := p.downloadBlk(b); err != nil {
 					p.Close()
 					pd.pp.pending <- p
@@ -304,24 +307,25 @@ func (pd *PieceDownloader) run() error {
 		}()
 	}
 
-	for i := range pd.blkCnt {
-		pd.pendindTask <- blockTask{
-			idx:  i,
-			cnt:  pd.blkCnt,
-			pIdx: pd.idx,
-			pLen: pLen,
+	go func() {
+		for i := range pd.blkCnt {
+			pd.pendindTask <- blockTask{
+				idx:  i,
+				cnt:  pd.blkCnt,
+				pIdx: pd.idx,
+				pLen: pLen,
+			}
 		}
-	}
+	}()
 
 	doneCnt := 0
 	for d := range pd.done {
 		doneCnt += d
-		log.Printf("blk tasks finished: %d/%d", doneCnt, pd.blkCnt)
+		log.Printf("[p: %d] blk tasks finished: %d/%d", pd.idx, doneCnt, pd.blkCnt)
 		if doneCnt == pd.blkCnt {
 			break
 		}
 	}
-	close(pd.done)
 	close(pd.pendindTask)
 	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.pieceLen)
 
@@ -392,20 +396,18 @@ func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 		hash:      c.t.Hash[:],
 	}
 
-	go func() {
-		for j := range len(c.targets) {
-			for range connPerTarget {
-				p := &Peer{
-					addr: c.targets[j].String(),
-					conn: nil,
-					id:   [20]byte{},
-				}
-				if err := pp.reconnect(p); err != nil {
-					log.Printf("reconnect: %v", err)
-				}
+	for j := range len(c.targets) {
+		for range connPerTarget {
+			p := &Peer{
+				addr: c.targets[j].String(),
+				conn: nil,
+				id:   [20]byte{},
+			}
+			if err := pp.reconnect(p); err != nil {
+				log.Printf("reconnect: %v", err)
 			}
 		}
-	}()
+	}
 
 	pd := PieceDownloader{
 		pp:  &pp,

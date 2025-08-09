@@ -46,7 +46,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 	}
 	defer fd.Close()
 	for pIdx := range len(t.PieceHashes) {
-		log.Printf("[xxxxx]: downloading %d piece", pIdx)
+		log.Printf("[xxxxx]: downloading %d/%d piece", pIdx+1, len(t.PieceHashes))
 		if p, err := c.downloadPiece(pIdx); err != nil {
 			return err
 		} else {
