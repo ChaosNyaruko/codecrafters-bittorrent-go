@@ -421,7 +421,7 @@ func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 	go pp.run()
 
 	defer func() {
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Microsecond)
 		pp.close <- 1
 	}()
 
