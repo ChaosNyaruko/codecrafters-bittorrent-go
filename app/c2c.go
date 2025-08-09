@@ -59,8 +59,13 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 	log.Printf("try donwloading %+v", task)
 	for {
 		msg, err := p.readMsg()
-		if err != nil {
+		if err == io.EOF {
+			log.Printf("[request]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
 			return nil, err
+		}
+		if err != nil {
+			log.Printf("readMsg err: %v", err)
+			continue
 		}
 		switch msg.MsgID {
 		case piece:
@@ -78,16 +83,20 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 
 func (p *Peer) connect(hash []byte) error {
 	err := p.handshake(hash)
+	log.Printf("connecting %v->%v, err: %v", p.conn.LocalAddr(), p.conn.RemoteAddr, err)
 	if err != nil {
 		p.Close()
 		return err
 	}
 
 	for {
-		log.Printf("waiting for bitfield")
 		msg, err := p.readMsg()
-		if err != nil {
+		if err == io.EOF {
+			log.Printf("[connect]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
 			return err
+		}
+		if err != nil {
+			continue
 		}
 		if msg.MsgID == bitfield {
 			// You can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
@@ -97,15 +106,12 @@ func (p *Peer) connect(hash []byte) error {
 		}
 	}
 
-	log.Printf("bitfield done")
-
 	pkt := interestedPkt()
 
-	n, err := p.conn.Write(pkt)
+	_, err = p.conn.Write(pkt)
 	if err != nil {
 		return err
 	}
-	log.Printf("send interested msg: %d", n)
 
 	for {
 		msg, err := p.readMsg()
@@ -133,12 +139,10 @@ func (p *Peer) handshake(hash []byte) error {
 	p.conn = conn
 
 	pkt := handshakePkt(hash[:])
-	n, err := conn.Write(pkt)
+	_, err = conn.Write(pkt)
 	if err != nil {
 		return fmt.Errorf("send to %v err: %v", p.addr, err)
 	}
-
-	log.Printf("%d bytes sent to %s", n, p.addr)
 
 	resp := &HandShakeMessage{}
 	if err := binary.Read(conn, binary.BigEndian, &resp.Length); err != nil {
@@ -307,16 +311,13 @@ func (msg *PeerMessage) Unpack(r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &msg.Length); err != nil {
 		return fmt.Errorf("unpack length: %v", err)
 	}
-	log.Printf("read msg len: %d", msg.Length)
 	if err := binary.Read(r, binary.BigEndian, &msg.MsgID); err != nil {
 		return fmt.Errorf("unpack msgid: %v", err)
 	}
-	log.Printf("read msg id: %d", msg.MsgID)
 	body := make([]byte, msg.Length-1)
 	if err := binary.Read(r, binary.BigEndian, &body); err != nil {
 		return fmt.Errorf("unpack body: %v", err)
 	}
-	log.Printf("read msg body: %d", len(msg.Payload))
 	msg.Payload = body
 	return nil
 }
@@ -335,21 +336,24 @@ const (
 
 func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
 	pp := PeerPool{
-		available: make(chan *Peer, 5),
-		pending:   make(chan *Peer, 5),
+		available: make(chan *Peer, 100),
+		pending:   make(chan *Peer, 100),
 		close:     make(chan int),
 		hash:      c.t.Hash[:],
 	}
 
-	// TODO: multi targets
-	for i := range 5 {
-		p := &Peer{
-			addr: c.targets[i%len(c.targets)].String(),
-			conn: nil,
-			id:   [20]byte{},
+	go func() {
+		for j := range len(c.targets) {
+			for range 5 {
+				p := &Peer{
+					addr: c.targets[j].String(),
+					conn: nil,
+					id:   [20]byte{},
+				}
+				pp.pending <- p
+			}
 		}
-		pp.pending <- p
-	}
+	}()
 
 	pd := PieceDownloader{
 		pp:    &pp,
@@ -399,12 +403,10 @@ func (c *Client) handShake(target string) error {
 	c.mainConn = conn
 
 	pkt := handshakePkt(c.t.Hash[:])
-	n, err := conn.Write(pkt)
+	_, err = conn.Write(pkt)
 	if err != nil {
 		return fmt.Errorf("send to %v err: %v", target, err)
 	}
-
-	log.Printf("%d bytes sent to %s", n, target)
 
 	resp := &HandShakeMessage{}
 	if err := binary.Read(conn, binary.BigEndian, &resp.Length); err != nil {

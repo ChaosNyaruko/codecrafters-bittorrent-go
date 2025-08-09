@@ -45,7 +45,7 @@ func decodeBencode(bencodedString string) (any, error) {
 // - 5:hello -> hello
 // - 10:hello12345 -> hello12345
 func decodeString(bencodedString string) (string, int, error) {
-	log.Printf("decodeString: %v", bencodedString)
+	// log.Printf("decodeString: %v", bencodedString)
 	var firstColonIndex int
 
 	for i := 0; i < len(bencodedString); i++ {
@@ -58,7 +58,7 @@ func decodeString(bencodedString string) (string, int, error) {
 	lengthStr := bencodedString[:firstColonIndex]
 
 	length, err := strconv.Atoi(lengthStr)
-	log.Printf("decode string: %q, %s, %d", bencodedString, lengthStr, length)
+	// log.Printf("decode string: %q, %s, %d", bencodedString, lengthStr, length)
 	if err != nil {
 		return "", -1, fmt.Errorf("decode string %q Atoi lengthStr:%v err: %v", bencodedString, lengthStr, err)
 	}
@@ -71,7 +71,7 @@ func decodeString(bencodedString string) (string, int, error) {
 
 func decodeDict(s string) (map[string]any, int, error) {
 	var i = 0
-	log.Printf("decodeDict %v", s)
+	// log.Printf("decodeDict %v", s)
 	if len(s) < 2 {
 		return nil, -1, fmt.Errorf("too short bencoded dict: %v", s)
 	}
@@ -81,7 +81,7 @@ func decodeDict(s string) (map[string]any, int, error) {
 	}
 	i += 1 // eat 'd'
 	for i < len(s) {
-		log.Printf("dict: %v", s[i:])
+		// log.Printf("dict: %v", s[i:])
 		switch {
 		case unicode.IsDigit(rune(s[i])):
 			key, j, err := decodeString(s[i:])
@@ -107,7 +107,7 @@ func decodeDict(s string) (map[string]any, int, error) {
 
 func decodeList(s string) ([]any, int, error) {
 	var i = 0
-	log.Printf("decodeList: %v", s)
+	// log.Printf("decodeList: %v", s)
 	if len(s) < 2 {
 		return nil, -1, fmt.Errorf("too short bencoded list: %v", s)
 	}
@@ -129,7 +129,7 @@ func decodeList(s string) ([]any, int, error) {
 			} else {
 				res = append(res, list)
 				i += j + 1
-				log.Printf("add %v, remain: %v", list, s[i:])
+				// log.Printf("add %v, remain: %v", list, s[i:])
 			}
 		case unicode.IsDigit(rune(s[i])):
 			if str, j, err := decodeString(s[i:]); err != nil {
@@ -137,7 +137,7 @@ func decodeList(s string) ([]any, int, error) {
 			} else {
 				res = append(res, str)
 				i += j + 1
-				log.Printf("add %v, remain: %v", str, s[i:])
+				// log.Printf("add %v, remain: %v", str, s[i:])
 			}
 		default:
 			if i >= len(s) || s[i] != 'e' {
@@ -150,7 +150,7 @@ func decodeList(s string) ([]any, int, error) {
 }
 
 func decodeInteger(s string) (int, int, error) {
-	log.Printf("decodeInteger: %v", s)
+	// log.Printf("decodeInteger: %v", s)
 	endAt := -1
 	for i := 1; i < len(s); i++ {
 		if s[i] == 'e' {
@@ -166,7 +166,7 @@ func decodeInteger(s string) (int, int, error) {
 	if err != nil {
 		return 0, -1, fmt.Errorf("bad number strings: %v", number)
 	}
-	log.Printf("decoded integer: %s", number)
+	// log.Printf("decoded integer: %s", number)
 	return n, endAt, nil
 }
 

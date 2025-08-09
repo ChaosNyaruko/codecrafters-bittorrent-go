@@ -35,7 +35,7 @@ func parseTorrentFile(f string) (Torrent, error) {
 	}
 	t.Tracker = m["announce"].(string)
 	info := m["info"].(map[string]any)
-	log.Printf("%s info: %v", f, info)
+	// log.Printf("%s info: %v", f, info)
 	t.Length = info["length"].(int)
 
 	// calc hash
@@ -46,7 +46,7 @@ func parseTorrentFile(f string) (Torrent, error) {
 		return t, err
 	}
 	t.Hash = sha1.Sum([]byte(encInfo))
-	log.Print(len(t.Hash))
+	// log.Print(len(t.Hash))
 
 	t.PieceLength = info["piece length"].(int)
 	hashes := []byte(info["pieces"].(string))
@@ -75,11 +75,11 @@ func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 func encodeDict(m map[string]any) (string, error) {
 	l := make(ByKey, 0, len(m))
 	for k, v := range m {
-		log.Printf("push: %v, %v", k, v)
+		// log.Printf("push: %v, %v", k, v)
 		l = append(l, Item{k, v})
 	}
 	sort.Sort(l)
-	log.Printf("sorted dict: %+v", l)
+	// log.Printf("sorted dict: %+v", l)
 	res := "d"
 	for _, item := range l {
 		key, err := encode(item.Key)
@@ -171,7 +171,6 @@ func getPeersFromTracker(t Torrent) ([]Target, error) {
 	}
 
 	s := string(body)
-	log.Print(s)
 
 	ps, _, err := decode(s)
 	if err != nil {
