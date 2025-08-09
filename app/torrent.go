@@ -133,16 +133,16 @@ func encode(item any) (string, error) {
 	}
 }
 
-type Peer struct {
+type Target struct {
 	IP   net.IP
 	Port uint16
 }
 
-func (p Peer) String() string {
+func (p Target) String() string {
 	return fmt.Sprintf("%s:%d", p.IP, p.Port)
 }
 
-func getPeersFromTracker(t Torrent) ([]Peer, error) {
+func getPeersFromTracker(t Torrent) ([]Target, error) {
 	tracker := t.Tracker
 	params := url.Values{}
 
@@ -178,7 +178,7 @@ func getPeersFromTracker(t Torrent) ([]Peer, error) {
 		return nil, fmt.Errorf("bad resp from Tracker: %q", s)
 	}
 
-	var res = make([]Peer, 0)
+	var res = make([]Target, 0)
 
 	info := ps.(map[string]any)
 	interval := info["interval"].(int)
@@ -195,7 +195,7 @@ func getPeersFromTracker(t Torrent) ([]Peer, error) {
 	for i := 0; i < len(addrs); i += 6 {
 		ip := addrs[i : i+4]
 		port := addrs[i+4 : i+6]
-		p := Peer{
+		p := Target{
 			IP:   ip,
 			Port: uint16(port[0])*256 + uint16(port[1]),
 		}

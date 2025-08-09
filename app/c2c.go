@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -14,14 +16,6 @@ import (
 // TODO: randomize it
 var myID = strings.Repeat("1234567890", 2)
 
-func handShake(target string, t Torrent) (*Client, error) {
-	c := &Client{
-		t:      t,
-		target: target,
-	}
-	return c, c.handShake(target)
-}
-
 type HandShakeMessage struct {
 	Length      uint8
 	MagicHeader string
@@ -32,8 +26,210 @@ type HandShakeMessage struct {
 
 type Client struct {
 	mainConn net.Conn
-	target   string
+	targets  []Target
 	t        Torrent
+}
+
+type Peer struct {
+	addr string
+	conn net.Conn
+	id   [20]byte
+}
+
+func (p *Peer) Close() {
+	log.Printf("close peer: %v", p.id)
+	p.conn.Close()
+}
+
+func (p *Peer) readMsg() (*PeerMessage, error) {
+	msg := &PeerMessage{}
+	if err := msg.Unpack(p.conn); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (p *Peer) downloadBlk(pIdx, pLen, blkId, blkCnt int) ([]byte, error) {
+	pkt := requestPkt(pIdx, blkId, pLen)
+	n, err := p.conn.Write(pkt)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("send request msg [%d:%d/%d]: %d, pkt: %v", pIdx, blkId, blkCnt, n, pkt)
+	for {
+		msg, err := p.readMsg()
+		if err != nil {
+			return nil, err
+		}
+		if msg.MsgID == piece {
+			log.Printf("recevied piece[%d vs %d], begin: %d(%d), block_len:%d",
+				pIdx, binary.BigEndian.Uint32(msg.Payload[:4]),
+				binary.BigEndian.Uint32(msg.Payload[4:8]), blkId,
+				len(msg.Payload[8:]))
+			return msg.Payload[8:], nil
+		} else if msg.MsgID == choke {
+			return nil, fmt.Errorf("choked by %v", p.addr)
+		}
+	}
+}
+
+func (p *Peer) connect(hash []byte) error {
+	err := p.handshake(hash)
+	if err != nil {
+		p.Close()
+		return err
+	}
+
+	for {
+		log.Printf("waiting for bitfield")
+		msg, err := p.readMsg()
+		if err != nil {
+			return err
+		}
+		if msg.MsgID == bitfield {
+			// You can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
+			break
+		} else {
+			log.Printf("recevied %v when expecting bitfield", msg.MsgID)
+		}
+	}
+
+	log.Printf("bitfield done")
+
+	pkt := interestedPkt()
+
+	n, err := p.conn.Write(pkt)
+	if err != nil {
+		return err
+	}
+	log.Printf("send interested msg: %d", n)
+
+	for {
+		msg, err := p.readMsg()
+		if err != nil {
+			return err
+		}
+
+		if msg.MsgID == unchoke {
+			// empty payload
+			log.Printf("unchoke recevied")
+			break
+		} else {
+			log.Printf("recevied %v when expecting unchoke", msg.MsgID)
+		}
+	}
+
+	return nil
+}
+
+func (p *Peer) handshake(hash []byte) error {
+	conn, err := net.Dial("tcp", p.addr)
+	if err != nil {
+		return fmt.Errorf("dial tcp error: %v", err)
+	}
+	p.conn = conn
+
+	pkt := handshakePkt(hash[:])
+	n, err := conn.Write(pkt)
+	if err != nil {
+		return fmt.Errorf("send to %v err: %v", p.addr, err)
+	}
+
+	log.Printf("%d bytes sent to %s", n, p.addr)
+
+	resp := &HandShakeMessage{}
+	if err := binary.Read(conn, binary.BigEndian, &resp.Length); err != nil {
+		return err
+	}
+
+	magic := make([]byte, resp.Length)
+	if err := binary.Read(conn, binary.BigEndian, magic); err != nil {
+		return err
+	}
+
+	resp.MagicHeader = string(magic)
+	if err := binary.Read(conn, binary.BigEndian, resp.Reserved[:]); err != nil {
+		return err
+	}
+	if err := binary.Read(conn, binary.BigEndian, resp.InfoHash[:]); err != nil {
+		return err
+	}
+	if err := binary.Read(conn, binary.BigEndian, resp.PeerID[:]); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type PeerPool struct {
+	available chan *Peer
+	pending   chan *Peer
+	hash      []byte
+	close     chan int
+}
+
+func (pp *PeerPool) clean() error {
+	close(pp.pending)
+	close(pp.available)
+	for p := range pp.pending {
+		p.Close()
+	}
+	for p := range pp.available {
+		p.Close()
+	}
+	log.Printf("peer pool stopped")
+	return nil
+}
+
+func (pp *PeerPool) run() error {
+	go func() {
+		for p := range pp.pending {
+			if err := p.connect(pp.hash); err != nil {
+				p.Close()
+				pp.pending <- p
+			} else {
+				pp.available <- p
+			}
+		}
+	}()
+
+	<-pp.close
+	return pp.clean()
+}
+
+type PieceDownloader struct {
+	pp    *PeerPool
+	piece []byte
+	t     Torrent
+	idx   int
+}
+
+func (pd *PieceDownloader) run() error {
+	blkCnt := int(math.Ceil(float64(pd.t.PieceLength) / float64(blockSize)))
+	var blkId = 0
+	for p := range pd.pp.available {
+		if blk, err := p.downloadBlk(pd.idx, pd.t.PieceLength, blkId, blkCnt); err != nil {
+			p.Close()
+			pd.pp.pending <- p
+		} else {
+			// TODO: concurrency
+			pd.piece = append(pd.piece, blk...)
+			pd.pp.available <- p
+		}
+		blkId++
+		if blkId == blkCnt {
+			break
+		}
+	}
+	log.Printf("piece downloader stopped: %v/%v", len(pd.piece), pd.t.PieceLength)
+
+	h := sha1.Sum(pd.piece)
+	got := hex.EncodeToString(h[:])
+	expected := pd.t.PieceHashes[pd.idx]
+	if got != expected {
+		return fmt.Errorf("sha1 checksum not match: \n%v\n%v\n", got, expected)
+	}
+	return nil
 }
 
 type PeerMessage struct {
@@ -86,84 +282,38 @@ const (
 )
 
 func (c *Client) downloadPiece(pIdx int, fname string) ([]byte, error) {
-	msg := PeerMessage{}
-	for {
-		log.Printf("waiting for bitfield")
-		if err := msg.Unpack(c.mainConn); err != nil {
-			return nil, err
-		}
-		log.Printf("peer msg: %s", msg)
-
-		if msg.MsgID == bitfield {
-			// You can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
-			break
-		}
+	pp := PeerPool{
+		available: make(chan *Peer, len(c.targets)),
+		pending:   make(chan *Peer, len(c.targets)),
+		close:     make(chan int),
+		hash:      c.t.Hash[:],
 	}
 
-	msg.MsgID = interested
-	msg.Payload = nil
-	pkt := msg.Pack()
+	// TODO: multi targets
+	for i := 0; i < 1; i++ {
+		p := &Peer{
+			addr: c.targets[i].String(),
+			conn: nil,
+			id:   [20]byte{},
+		}
+		pp.pending <- p
+	}
 
-	n, err := c.mainConn.Write(pkt)
-	if err != nil {
+	pd := PieceDownloader{
+		pp:    &pp,
+		piece: make([]byte, 0, c.t.PieceLength),
+		t:     c.t,
+		idx:   pIdx,
+	}
+	go pp.run()
+
+	defer func() { pp.close <- 1 }()
+
+	if err := pd.run(); err != nil {
 		return nil, err
 	}
-	log.Printf("send interested msg: %d", n)
 
-	for {
-		msg := PeerMessage{}
-		if err := msg.Unpack(c.mainConn); err != nil {
-			return nil, err
-		}
-		log.Printf("peer msg: %+v", msg)
-
-		if msg.MsgID == unchoke {
-			// empty payload
-			log.Printf("unchoke recevied")
-			break
-		}
-	}
-
-	msg.Payload = nil
-	// TODO: concurrency
-	pieceData := make([]byte, 0, c.t.PieceLength)
-	blkCnt := int(math.Ceil(float64(c.t.PieceLength) / float64(blockSize)))
-	log.Printf("piece size: %d, blksize: %d, blkcnt: %d", c.t.PieceLength, blockSize, blkCnt)
-	for blkId := range blkCnt {
-		msg.MsgID = request
-		msg.Payload = nil
-		msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(pIdx))
-		msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(blkId*blockSize))
-		size := blockSize
-		if blkId == blkCnt-1 {
-			size = c.t.PieceLength - blkId*blockSize
-		}
-		msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(size))
-		pkt = msg.Pack()
-		n, err := c.mainConn.Write(pkt)
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("send request msg [%d:%d/%d]: %d, pkt: %v", pIdx, blkId, blkCnt, n, pkt)
-
-		for {
-			msg := PeerMessage{}
-			if err := msg.Unpack(c.mainConn); err != nil {
-				return nil, err
-			}
-			log.Printf("peer msg: %+v", msg)
-
-			if msg.MsgID == piece {
-				log.Printf("recevied piece[%d vs %d], begin: %d(%d), block_len:%d",
-					pIdx, binary.BigEndian.Uint32(msg.Payload[:4]),
-					binary.BigEndian.Uint32(msg.Payload[4:8]), blkId,
-					len(msg.Payload[8:]))
-				pieceData = append(pieceData, msg.Payload[8:]...)
-				break
-			}
-		}
-
-	}
+	pieceData := pd.piece
 
 	fd, err := os.Create(fname)
 	if err != nil {
@@ -195,14 +345,7 @@ func (c *Client) handShake(target string) error {
 	}
 	c.mainConn = conn
 
-	pkt := make([]byte, 1+19+8+20+20)
-	pkt[0] = 19
-	copy(pkt[1:20], "BitTorrent protocol")
-	// pkt[20:28] = 0
-
-	copy(pkt[28:48], c.t.Hash[:])
-	copy(pkt[48:68], myID[:])
-
+	pkt := handshakePkt(c.t.Hash[:])
 	n, err := conn.Write(pkt)
 	if err != nil {
 		return fmt.Errorf("send to %v err: %v", target, err)
@@ -232,5 +375,9 @@ func (c *Client) handShake(target string) error {
 	}
 
 	fmt.Printf("Peer ID: %x\n", resp.PeerID)
+	return nil
+}
+
+func (c *Client) run() error {
 	return nil
 }

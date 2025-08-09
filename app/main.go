@@ -216,11 +216,9 @@ func main() {
 			os.Exit(1)
 		}
 		for _, p := range peers {
-			if c, err := handShake(p.String(), t); err != nil {
+			if err := handShake(p.String(), t); err != nil {
 				fmt.Fprintf(os.Stderr, "try handshaking with %s err: %v", p, err)
 				os.Exit(1)
-			} else {
-				c.Close()
 			}
 		}
 
@@ -247,18 +245,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "getPeersFromTracker err: %v", err)
 			os.Exit(1)
 		}
-		p := peers[0]
-		c, err := handShake(p.String(), t)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "try handshaking with %s err: %v", p, err)
-			os.Exit(1)
-		}
-		log.Printf("handshake sucess, start downloading...")
-		if _, err := c.downloadPiece(pIdx, fname); err != nil {
+		if err := downloadPiece(peers, t, pIdx, fname); err != nil {
 			fmt.Fprintf(os.Stderr, "download piece err: %v", err)
 			os.Exit(1)
 		}
-		c.Close()
 
 	default:
 		fmt.Println("Unknown command: " + command)
