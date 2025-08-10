@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"strings"
-	"time"
 )
 
 const (
@@ -182,10 +181,14 @@ func (p *Peer) handshake(hash []byte) error {
 }
 
 type PeerPool struct {
-	available chan *Peer
+	// to avoid `panic: send on closed channel` during cleanup
+	//   1. atomic / mutex
+	//  *2. once: pending closed itself*
 	pending   chan *Peer
-	hash      []byte
-	close     chan int
+	available chan *Peer
+
+	hash  []byte
+	close chan int
 }
 
 func (pp *PeerPool) reconnect(p *Peer) error {
@@ -209,25 +212,27 @@ func (pp *PeerPool) reuse(p *Peer) error {
 }
 
 func (pp *PeerPool) clean() error {
-	close(pp.pending)
-	close(pp.available)
+	log.Printf("cleaning pendings")
 	for p := range pp.pending {
 		p.Close()
 	}
+	log.Printf("cleaning availables")
 	for p := range pp.available {
 		p.Close()
 	}
-	log.Printf("peer pool stopped")
 	return nil
 }
 
 func (pp *PeerPool) run() error {
 	go func() {
-		for p := range pp.pending {
+		for {
 			select {
 			case <-pp.close:
+				log.Printf("close channels")
+				close(pp.pending)
+				close(pp.available)
 				return
-			default:
+			case p := <-pp.pending:
 				if err := p.connect(pp.hash); err != nil {
 					p.Close()
 					pp.reconnect(p)
@@ -238,7 +243,7 @@ func (pp *PeerPool) run() error {
 		}
 	}()
 	<-pp.close
-	pp.clean()
+	log.Printf("peer pool stopped")
 	return nil
 }
 
@@ -283,13 +288,9 @@ func (pd *PieceDownloader) run() error {
 			defer log.Printf("downloader %d stopped...", i)
 			for b := range pd.pendindTask {
 				p := <-pd.pp.available
-				// if p == nil {
-				// 	log.Printf("available closed")
-				// 	return
-				// }
 				if blk, err := p.downloadBlk(b); err != nil {
 					p.Close()
-					pd.pp.pending <- p
+					pd.pp.reconnect(p)
 					pd.pendindTask <- b
 				} else {
 					l := b.idx * blockSize
@@ -420,14 +421,13 @@ func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
 	}
 	go pp.run()
 
-	defer func() {
-		time.Sleep(100 * time.Microsecond)
-		pp.close <- 1
-	}()
-
 	if err := pd.run(); err != nil {
 		return nil, err
 	}
+
+	log.Printf("closing peerpool")
+	close(pp.close)
+	pp.clean()
 
 	return pd.piece, nil
 }
