@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"strings"
 )
 
 func handShake(target string, t Torrent) error {
@@ -58,4 +61,35 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 
 	}
 	return err
+}
+
+func parseMagnetlink(l string) error {
+	const scheme = "magnet:?"
+	l = strings.TrimSpace(l)
+	if !strings.HasPrefix(l, scheme) {
+		return fmt.Errorf("unrecognized scheme")
+	}
+	l = l[len(scheme):]
+	v, err := url.ParseQuery(l)
+	if err != nil {
+		return err
+	}
+
+	xt, ok := v["xt"]
+	if !ok {
+		return fmt.Errorf("xt is required")
+	}
+
+	tr, _ := v["tr"]
+
+	hash := xt[0]
+	const magic = "urn:btih:"
+	if !strings.HasPrefix(hash, magic) {
+		return fmt.Errorf("bad hash: %v", hash)
+	}
+	hash = hash[len(magic):]
+	url := tr[0]
+
+	fmt.Printf("Tracker URL: %s\nInfo Hash: %s\n", url, hash)
+	return nil
 }

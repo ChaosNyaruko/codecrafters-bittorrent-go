@@ -275,6 +275,13 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "magnet_parse":
+		l := os.Args[2]
+		if err := parseMagnetlink(l); err != nil {
+			fmt.Fprintf(os.Stderr, "magnet parse %q: %v", l, err)
+
+		}
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
