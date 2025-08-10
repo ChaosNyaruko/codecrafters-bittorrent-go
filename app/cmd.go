@@ -97,9 +97,10 @@ func magnetHandshake(l string) error {
 	// NOTE: the test suite ensures it has and only has one target.
 	p := targets[0]
 	peer := Peer{
-		addr: p.String(),
-		conn: nil,
-		id:   [20]byte{},
+		addr:             p.String(),
+		conn:             nil,
+		supportExtension: true,
+		id:               [20]byte{},
 	}
 	if err := peer.handshake(t.Hash[:]); err != nil {
 		return err

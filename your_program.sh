@@ -13,6 +13,7 @@ set -e # Exit early if any commands fail
 # - Edit this to change how your program compiles locally
 # - Edit .codecrafters/compile.sh to change how your program compiles remotely
 (
+  export LOCAL_TEST=1
   cd "$(dirname "$0")" # Ensure compile steps are run within the repository directory
   go build -o /tmp/codecrafters-build-bittorrent-go app/*.go
 )
