@@ -151,7 +151,15 @@ func getPeersFromTracker(t Torrent) ([]Target, error) {
 	params.Set("port", "6881")
 	params.Set("uploaded", "0")
 	params.Set("downloaded", "0")
-	params.Set("left", strconv.Itoa(t.Length))
+	left := t.Length
+	if left == 0 {
+		// NOTE: by the challenge author:
+		//   The tracker will require a "left" parameter value greater than zero,
+		//   but we don't know file size in advance.
+		//   You can send a made up value like 999 as a workaround
+		left = 999
+	}
+	params.Set("left", strconv.Itoa(left))
 	params.Set("compact", "1")
 	queryString := params.Encode()
 
@@ -172,6 +180,7 @@ func getPeersFromTracker(t Torrent) ([]Target, error) {
 
 	s := string(body)
 
+	log.Printf("tracker response: %v", s)
 	ps, _, err := decode(s)
 	if err != nil {
 		return nil, fmt.Errorf("bad resp from Tracker: %q", s)
@@ -180,10 +189,15 @@ func getPeersFromTracker(t Torrent) ([]Target, error) {
 	var res = make([]Target, 0)
 
 	info := ps.(map[string]any)
-	interval := info["interval"].(int)
+	_, ok := info["interval"].(int)
+	if !ok {
+		log.Printf("bad interval: %v", info["interval"])
+	}
 
-	peers := info["peers"].(string)
-	log.Printf("interval: %d, peers: %v/%d/%d", interval, peers, len(peers), len([]byte(peers)))
+	peers, ok := info["peers"].(string)
+	if !ok {
+		log.Printf("bad peers: %v", info["peers"])
+	}
 
 	addrs := []byte(peers)
 

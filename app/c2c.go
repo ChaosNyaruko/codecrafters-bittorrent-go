@@ -35,9 +35,10 @@ type Client struct {
 }
 
 type Peer struct {
-	addr string
-	conn net.Conn
-	id   [20]byte
+	addr             string
+	conn             net.Conn
+	id               [20]byte
+	supportExtension bool
 }
 
 func (p *Peer) Close() {
@@ -147,7 +148,7 @@ func (p *Peer) handshake(hash []byte) error {
 	// conn.SetDeadline(time.Time{})
 	p.conn = conn
 
-	pkt := handshakePkt(hash[:])
+	pkt := handshakePkt(hash[:], p.supportExtension)
 	_, err = conn.Write(pkt)
 	if err != nil {
 		return fmt.Errorf("send to %v err: %v", p.addr, err)
@@ -449,7 +450,7 @@ func (c *Client) handShake(target string) error {
 	}
 	c.mainConn = conn
 
-	pkt := handshakePkt(c.t.Hash[:])
+	pkt := handshakePkt(c.t.Hash[:], false)
 	_, err = conn.Write(pkt)
 	if err != nil {
 		return fmt.Errorf("send to %v err: %v", target, err)

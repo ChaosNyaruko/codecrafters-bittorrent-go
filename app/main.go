@@ -279,8 +279,13 @@ func main() {
 	case "magnet_parse":
 		l := os.Args[2]
 		if err := parseMagnetlink(l); err != nil {
-			fmt.Fprintf(os.Stderr, "magnet parse %q: %v", l, err)
+			fmt.Fprintf(os.Stderr, "magnet parse %q err: %v", l, err)
 
+		}
+	case "magnet_handshake":
+		l := os.Args[2]
+		if err := magnetHandshake(l); err != nil {
+			fmt.Fprintf(os.Stderr, "magnet handshake %q err: %v", l, err)
 		}
 
 	default:

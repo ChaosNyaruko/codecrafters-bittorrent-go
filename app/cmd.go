@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -67,5 +68,42 @@ func parseMagnetlink(l string) error {
 	} else {
 		fmt.Printf("Tracker URL: %s\nInfo Hash: %s\n", m.tracker, m.hash)
 	}
+	return nil
+}
+
+func magnetHandshake(l string) error {
+	m, err := parseMagnet(l)
+	if err != nil {
+		return err
+	}
+	h, err := hex.DecodeString(m.hash)
+	if err != nil || len(h) != 20 {
+		return fmt.Errorf("decode hash[%v] err: %v", m.hash, err)
+	}
+	hash := [20]byte{}
+	copy(hash[:], h)
+	t := Torrent{
+		Tracker:     m.tracker,
+		Length:      0,
+		Hash:        hash,
+		PieceLength: 0,
+		PieceHashes: []string{},
+	}
+	targets, err := getPeersFromTracker(t)
+	if err != nil {
+		return fmt.Errorf("get peers from tracker %q err: %v", t.Tracker, err)
+	}
+
+	// NOTE: the test suite ensures it has and only has one target.
+	p := targets[0]
+	peer := Peer{
+		addr: p.String(),
+		conn: nil,
+		id:   [20]byte{},
+	}
+	if err := peer.handshake(t.Hash[:]); err != nil {
+		return err
+	}
+	fmt.Printf("Peer ID: %x\n", peer.id)
 	return nil
 }

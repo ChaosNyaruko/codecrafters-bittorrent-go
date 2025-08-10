@@ -6,11 +6,15 @@ import (
 	"math"
 )
 
-func handshakePkt(hash []byte) []byte {
+func handshakePkt(hash []byte, extension bool) []byte {
 	pkt := make([]byte, 1+19+8+20+20)
 	pkt[0] = 19
 	copy(pkt[1:20], "BitTorrent protocol")
 	clear(pkt[20:28]) // reserved
+	if extension {
+		// set the 20th bit from the right to 1 (0-indexed)
+		pkt[25] = 0x10
+	}
 
 	copy(pkt[28:48], hash[:])
 	copy(pkt[48:68], myID[:])
