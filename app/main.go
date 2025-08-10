@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 var _ = json.Marshal
 
 func init() {
-	// log.SetOutput(io.Discard)
+	log.SetOutput(io.Discard)
 }
 
 func decode(bencodedString string) (any, int, error) {
