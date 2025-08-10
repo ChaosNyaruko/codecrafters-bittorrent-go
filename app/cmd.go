@@ -3,9 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"os"
-	"strings"
 )
 
 func handShake(target string, t Torrent) error {
