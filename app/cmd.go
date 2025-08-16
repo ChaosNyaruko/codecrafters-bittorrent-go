@@ -57,7 +57,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 	}()
 
 	sz := max(len(t.PieceHashes)/5, 1)
-	const threadNum = 10
+	const threadNum = 5
 	res := make([]byte, t.Length)
 	var wg sync.WaitGroup
 	for i := range threadNum {
