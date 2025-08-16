@@ -220,8 +220,17 @@ func magnetDownload(l, fname string, pIdx int, fileMode bool) error {
 	}
 	// TODO: concurrent downloading
 	for pIdx := range len(peer.magnetMeta.PieceHashes) {
-		log.Printf("[%s]: downloading %d/%d piece", peer.magnetMeta.Name, pIdx+1, len(t.PieceHashes))
-		if p, err := peer.magnetDownloadPiece(pIdx); err != nil {
+		sp := Peer{
+			addr:             peer.addr,
+			conn:             peer.conn, // TODO: concurrency safety
+			unchoked:         false,
+			id:               peer.id,
+			supportExtension: peer.supportExtension,
+			extensions:       peer.extensions,
+			magnetMeta:       peer.magnetMeta,
+		}
+		log.Printf("[%s]: downloading %d/%d piece", sp.magnetMeta.Name, pIdx+1, len(peer.magnetMeta.PieceHashes))
+		if p, err := sp.magnetDownloadPiece(pIdx); err != nil {
 			return err
 		} else {
 			_, err := fd.Write(p)
