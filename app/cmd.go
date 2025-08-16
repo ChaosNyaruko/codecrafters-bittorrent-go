@@ -153,5 +153,12 @@ func magnetInfo(l string) error {
 	if err := peer.handshake(t.Hash[:], true); err != nil {
 		return err
 	}
+
+	if err := peer.exchangeMetadata(); err != nil {
+		return err
+	}
+
+	fmt.Printf("TODO\n")
+
 	return nil
 }

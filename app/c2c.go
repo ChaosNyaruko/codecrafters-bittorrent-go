@@ -207,27 +207,30 @@ func (p *Peer) handshake(hash []byte, full bool) error {
 	p.extensions = m.(map[string]any)["m"].(map[string]any)
 	log.Printf("peer extensions: %+v", p.extensions)
 
+	return nil
+}
+
+func (p *Peer) exchangeMetadata() error {
 	// TODO: Since we're only requesting one piece in this challenge, this will always be 0
 	// a piece is 16KiB, the metadata can consist of multiple pieces.
 	mt := map[string]any{"msg_type": 0, "piece": 0}
-	pkt = extensionPkt(byte(p.extensions["ut_metadata"].(int)), mt)
-	_, err = p.conn.Write(pkt)
+	pkt := extensionPkt(byte(p.extensions["ut_metadata"].(int)), mt)
+	_, err := p.conn.Write(pkt)
 	if err != nil {
 		return err
 	}
 
-	msg, err = p.waitUntilPeerMessage(extension, "extension metadata resp")
+	msg, err := p.waitUntilPeerMessage(extension, "extension metadata resp")
 	if err != nil {
 		return err
 	}
 	log.Printf("metadata resp: %+v, payload: %v", msg, msg.Payload)
-	m, err = decodeBencode(string(msg.Payload[1:]))
+	m, err := decodeBencode(string(msg.Payload[1:]))
 	if err != nil {
 		return err
 	}
 
 	log.Printf("peer file metadata: %+v", m)
-
 	return nil
 }
 
