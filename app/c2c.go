@@ -124,12 +124,18 @@ func (p *Peer) connect(hash []byte) error {
 }
 
 func (p *Peer) handshake(hash []byte) error {
-	conn, err := net.Dial("tcp", p.addr)
-	if err != nil {
-		return fmt.Errorf("dial tcp error: %v", err)
+	var conn net.Conn
+	var err error
+	for {
+		conn, err = net.Dial("tcp", p.addr)
+		if err != nil {
+			log.Printf("dial tcp error: %v", err)
+			continue
+		}
+		// conn.SetDeadline(time.Time{})
+		p.conn = conn
+		break
 	}
-	// conn.SetDeadline(time.Time{})
-	p.conn = conn
 
 	pkt := handshakePkt(hash[:], p.supportExtension)
 	_, err = conn.Write(pkt)
