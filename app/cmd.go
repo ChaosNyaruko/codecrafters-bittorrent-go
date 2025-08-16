@@ -18,6 +18,7 @@ func handShake(target string, t Torrent) error {
 	if err := peer.handshake(t.Hash[:], false); err != nil {
 		return err
 	}
+	fmt.Printf("Peer ID: %x\n", peer.id)
 	return nil
 }
 
