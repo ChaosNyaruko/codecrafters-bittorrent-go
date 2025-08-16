@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func handShake(target string, t Torrent) error {
@@ -54,6 +55,10 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 		return err
 	}
 	defer fd.Close()
+	start := time.Now()
+	defer func() {
+		fmt.Printf("downloadFile %v[%dB] cost: %v", fname, t.Length, time.Since(start))
+	}()
 	for pIdx := range len(t.PieceHashes) {
 		log.Printf("[xxxxx]: downloading %d/%d piece", pIdx+1, len(t.PieceHashes))
 		if p, err := c.downloadPiece(pIdx); err != nil {
@@ -219,6 +224,10 @@ func magnetDownload(l, fname string, pIdx int, fileMode bool) error {
 		return err
 	}
 	// TODO: concurrent downloading
+	start := time.Now()
+	defer func() {
+		fmt.Printf("downloadFile %v[%dB] cost: %v", fname, peer.magnetMeta.Length, time.Since(start))
+	}()
 	for pIdx := range len(peer.magnetMeta.PieceHashes) {
 		sp := Peer{
 			addr:             peer.addr,
