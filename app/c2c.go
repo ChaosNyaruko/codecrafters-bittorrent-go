@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	workingThreads = 5
+	workingThreads = 10
 	connPerTarget  = 1
 )
 
