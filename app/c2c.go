@@ -14,7 +14,7 @@ import (
 
 const (
 	workingThreads = 5
-	connPerTarget  = 3
+	connPerTarget  = 1
 )
 
 // TODO: randomize it

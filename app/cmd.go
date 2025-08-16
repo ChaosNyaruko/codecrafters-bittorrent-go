@@ -57,7 +57,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 	}()
 
 	sz := max(len(t.PieceHashes)/5, 1)
-	threadNum := len(targets)
+	threadNum := 1
 	res := make([]byte, t.Length)
 	var wg sync.WaitGroup
 	for i := range threadNum {
@@ -66,7 +66,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 			defer wg.Done()
 			c := &Client{
 				t:       t,
-				targets: targets[i : i+1],
+				targets: targets,
 			}
 			defer c.Close()
 			log.Printf("[#%d piece downloader]: [%d,%d)/%d", i, start, end, len(t.PieceHashes))
