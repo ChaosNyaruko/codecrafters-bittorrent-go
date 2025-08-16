@@ -114,5 +114,6 @@ func magnetHandshake(l string) error {
 		return err
 	}
 	fmt.Printf("Peer ID: %x\n", peer.id)
+	fmt.Printf("Peer Metadata Extension ID: %d\n", peer.extensions["ut_metadata"].(int))
 	return nil
 }

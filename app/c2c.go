@@ -39,6 +39,7 @@ type Peer struct {
 	conn             net.Conn
 	id               [20]byte
 	supportExtension bool
+	extensions       map[string]any
 }
 
 func (p *Peer) Close() {
@@ -195,7 +196,16 @@ func (p *Peer) handshake(hash []byte, full bool) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("extension handshake resp: %+v", msg)
+	log.Printf("extension handshake resp: %+v, payload: %v", msg, msg.Payload)
+
+	peerExtenstion := msg.Payload[1:]
+	m, err := decodeBencode(string(peerExtenstion))
+	if err != nil {
+		return err
+	}
+
+	log.Printf("peer extensions: %+v", m)
+	p.extensions = m.(map[string]any)["m"].(map[string]any)
 
 	return nil
 }
