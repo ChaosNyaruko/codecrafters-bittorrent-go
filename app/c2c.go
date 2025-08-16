@@ -37,6 +37,7 @@ type Client struct {
 type Peer struct {
 	addr             string
 	conn             net.Conn
+	unchoked         bool
 	id               [20]byte
 	supportExtension bool
 	extensions       map[string]any
@@ -60,7 +61,30 @@ func (p *Peer) readMsg(name string) (*PeerMessage, error) {
 }
 
 func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
-	// p.conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	if !p.unchoked {
+		pkt := interestedPkt()
+
+		_, err := p.conn.Write(pkt)
+		if err != nil {
+			return nil, err
+		}
+
+		for {
+			msg, err := p.readMsg("unchoke")
+			if err != nil {
+				return nil, err
+			}
+
+			if msg.MsgID == unchoke {
+				// empty payload
+				log.Printf("unchoke recevied")
+				break
+			} else {
+				log.Printf("recevied %v when expecting unchoke", msg.MsgID)
+			}
+		}
+		p.unchoked = true
+	}
 	pIdx, pLen, blkId := task.pIdx, task.pLen, task.idx
 	pkt := requestPkt(pIdx, blkId, pLen)
 	_, err := p.conn.Write(pkt)
@@ -115,28 +139,6 @@ func (p *Peer) connect(hash []byte) error {
 		return err
 	}
 
-	pkt := interestedPkt()
-
-	_, err = p.conn.Write(pkt)
-	if err != nil {
-		return err
-	}
-
-	for {
-		msg, err := p.readMsg("unchoke")
-		if err != nil {
-			return err
-		}
-
-		if msg.MsgID == unchoke {
-			// empty payload
-			log.Printf("unchoke recevied")
-			break
-		} else {
-			log.Printf("recevied %v when expecting unchoke", msg.MsgID)
-		}
-	}
-
 	return nil
 }
 
@@ -181,6 +183,7 @@ func (p *Peer) handshakeExt(hash []byte) error {
 
 func (p *Peer) handshake(hash []byte) (bool, error) {
 	p.conn = nil
+	p.unchoked = false
 	for p.conn == nil {
 		conn, err := net.Dial("tcp", p.addr)
 		if err != nil {
@@ -233,28 +236,6 @@ func (p *Peer) handshake(hash []byte) (bool, error) {
 }
 
 func (p *Peer) magnetDownloadPiece(pIdx int) ([]byte, error) {
-	pkt := interestedPkt()
-
-	_, err := p.conn.Write(pkt)
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		msg, err := p.readMsg("unchoke")
-		if err != nil {
-			return nil, err
-		}
-
-		if msg.MsgID == unchoke {
-			// empty payload
-			log.Printf("unchoke recevied")
-			break
-		} else {
-			log.Printf("recevied %v when expecting unchoke", msg.MsgID)
-		}
-	}
-
 	pieceCnt := int(math.Ceil(float64(p.magnetMeta.Length) / float64(p.magnetMeta.PieceLength)))
 	if pieceCnt != len(p.magnetMeta.PieceHashes) {
 		return nil, fmt.Errorf("unmatched pieceCnt: %v/%v", pieceCnt, len(p.magnetMeta.PieceHashes))
