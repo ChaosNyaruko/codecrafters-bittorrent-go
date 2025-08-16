@@ -154,11 +154,11 @@ func magnetInfo(l string) error {
 		return err
 	}
 
-	if err := peer.exchangeMetadata(); err != nil {
+	if err := peer.exchangeMetadata(t.Hash, m.tracker); err != nil {
 		return err
 	}
 
-	fmt.Printf("TODO\n")
+	fmt.Printf("%s\n", peer.magnetMeta)
 
 	return nil
 }

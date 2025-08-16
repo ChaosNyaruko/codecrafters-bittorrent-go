@@ -40,6 +40,7 @@ type Peer struct {
 	id               [20]byte
 	supportExtension bool
 	extensions       map[string]any
+	magnetMeta       MagnetMeta
 }
 
 func (p *Peer) Close() {
@@ -210,17 +211,16 @@ func (p *Peer) handshake(hash []byte, full bool) error {
 	return nil
 }
 
-func (p *Peer) exchangeMetadata() error {
+func (p *Peer) exchangeMetadata(hash [20]byte, url string) error {
 	// TODO: Since we're only requesting one piece in this challenge, this will always be 0
 	// a piece is 16KiB, the metadata can consist of multiple pieces.
-	mt := map[string]any{"msg_type": 0, "piece": 0}
+	mt := map[string]any{"msg_type": metaRequest, "piece": 0}
 	pkt := extensionPkt(byte(p.extensions["ut_metadata"].(int)), mt)
 	_, err := p.conn.Write(pkt)
 	if err != nil {
 		return err
 	}
 
-	return nil
 	msg, err := p.waitUntilPeerMessage(extension, "extension metadata resp")
 	if err != nil {
 		return err
@@ -230,8 +230,41 @@ func (p *Peer) exchangeMetadata() error {
 	if err != nil {
 		return err
 	}
+	mt = m.(map[string]any)
+	sz := mt["total_size"].(int)
+	if x := mt["msg_type"].(int); x != metaData {
+		return fmt.Errorf("should receive msg_type=1, but got %v", x)
+	}
 
-	log.Printf("peer file metadata: %+v", m)
+	md, err := decodeBencode(string(msg.Payload[len(msg.Payload)-sz : len(msg.Payload)]))
+	if err != nil {
+		return err
+	}
+	mdd := md.(map[string]any)
+
+	hashes := []byte(mdd["pieces"].(string))
+
+	if len(hashes)%20 != 0 {
+		return fmt.Errorf("bad hashes : %v/%d", hashes, len(hashes))
+	}
+
+	hs := make([]string, 0, len(hashes)/20)
+	for i := 0; i < len(hashes); i += 20 {
+		hs = append(hs, hex.EncodeToString(hashes[i:i+20]))
+	}
+	meta := Torrent{
+		Length:      mdd["length"].(int),
+		PieceLength: mdd["piece length"].(int),
+		PieceHashes: hs,
+		Tracker:     url,
+		Hash:        hash,
+	}
+	p.magnetMeta = MagnetMeta{
+		Name:    mdd["name"].(string),
+		Torrent: meta,
+	}
+
+	log.Printf("peer file metadata: %+v", p.magnetMeta)
 	return nil
 }
 

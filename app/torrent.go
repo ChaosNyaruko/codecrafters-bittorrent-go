@@ -12,7 +12,17 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 )
+
+type MagnetMeta struct {
+	Name string
+	Torrent
+}
+
+func (m MagnetMeta) String() string {
+	return fmt.Sprintf("Tracker URL: %s\nLength: %d\nInfo Hash: %x\nPiece Length: %d\nPiece Hashes:\n%s", m.Tracker, m.Length, m.Hash, m.PieceLength, strings.Join(m.PieceHashes, "\n"))
+}
 
 type Torrent struct {
 	Tracker     string
