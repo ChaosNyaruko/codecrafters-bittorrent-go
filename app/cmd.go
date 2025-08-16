@@ -8,11 +8,17 @@ import (
 )
 
 func handShake(target string, t Torrent) error {
-	c := &Client{
-		t: t,
+	peer := Peer{
+		addr:             target,
+		conn:             nil,
+		supportExtension: true,
+		id:               [20]byte{},
 	}
-	defer c.Close()
-	return c.handShake(target)
+	defer peer.Close()
+	if err := peer.handshake(t.Hash[:]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func downloadPiece(targets []Target, t Torrent, pIdx int, fname string) error {
@@ -102,6 +108,7 @@ func magnetHandshake(l string) error {
 		supportExtension: true,
 		id:               [20]byte{},
 	}
+	defer peer.Close()
 	if err := peer.handshake(t.Hash[:]); err != nil {
 		return err
 	}

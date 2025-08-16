@@ -98,23 +98,6 @@ func (p *Peer) connect(hash []byte) error {
 		return err
 	}
 
-	for {
-		msg, err := p.readMsg("bitfield")
-		if err == io.EOF {
-			log.Printf("[connect]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
-			return err
-		}
-		if err != nil {
-			continue
-		}
-		if msg.MsgID == bitfield {
-			// You can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
-			break
-		} else {
-			log.Printf("recevied %v when expecting bitfield", msg.MsgID)
-		}
-	}
-
 	pkt := interestedPkt()
 
 	_, err = p.conn.Write(pkt)
@@ -178,7 +161,55 @@ func (p *Peer) handshake(hash []byte) error {
 	copy(p.id[:], resp.PeerID[:])
 	log.Printf("handshake: %v, %v", p.id, p.addr)
 
+	_, err = p.waitUntilPeerMessage(bitfield, "bitfield")
+	if err != nil {
+		return err
+	}
+
+	// TODO: abstract the "Reserved" field
+	if resp.Reserved[5] != 0x10 {
+		return nil
+	}
+
+	log.Printf("%x supports extenstion", p.id)
+
+	ut := map[string]any{"m": map[string]any{"ut_metadata": utMetadata}}
+	pkt = extensionPkt(extensionHandshake, ut)
+
+	_, err = p.conn.Write(pkt)
+	if err != nil {
+		return err
+	}
+
+	msg, err := p.waitUntilPeerMessage(extension, "extenstion handshake resp")
+	if err != nil {
+		return err
+	}
+	log.Printf("extension handshake resp: %+v", msg)
+
 	return nil
+}
+
+func (p *Peer) waitUntilPeerMessage(id uint8, name string) (*PeerMessage, error) {
+	var msg *PeerMessage
+	var err error
+	for {
+		msg, err = p.readMsg(name)
+		if err == io.EOF {
+			return nil, err
+		}
+		if err != nil {
+			continue
+		}
+		if msg.MsgID == id {
+			// For bitfield, you can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
+			break
+		} else {
+			log.Printf("recevied %v when expecting %d/%s", msg.MsgID, id, name)
+		}
+	}
+
+	return msg, err
 }
 
 type PeerPool struct {
@@ -382,6 +413,10 @@ func (msg *PeerMessage) Unpack(name string, r io.Reader) error {
 }
 
 const (
+	utMetadata = 101
+)
+
+const (
 	choke = iota
 	unchoke
 	interested
@@ -391,6 +426,12 @@ const (
 	request
 	piece
 	cancel
+
+	extension = 20
+)
+
+const (
+	extensionHandshake = 0
 )
 
 func (c *Client) downloadPiece(pIdx int) ([]byte, error) {
@@ -439,44 +480,5 @@ func (c *Client) Close() error {
 	if c.mainConn != nil {
 		return c.mainConn.Close()
 	}
-	return nil
-}
-
-// TODO: duplicate code
-func (c *Client) handShake(target string) error {
-	conn, err := net.Dial("tcp", target)
-	if err != nil {
-		return fmt.Errorf("dial tcp error: %v", err)
-	}
-	c.mainConn = conn
-
-	pkt := handshakePkt(c.t.Hash[:], false)
-	_, err = conn.Write(pkt)
-	if err != nil {
-		return fmt.Errorf("send to %v err: %v", target, err)
-	}
-
-	resp := &HandShakeMessage{}
-	if err := binary.Read(conn, binary.BigEndian, &resp.Length); err != nil {
-		return err
-	}
-
-	magic := make([]byte, resp.Length)
-	if err := binary.Read(conn, binary.BigEndian, magic); err != nil {
-		return err
-	}
-
-	// resp.MagicHeader = string(magic)
-	if err := binary.Read(conn, binary.BigEndian, resp.Reserved[:]); err != nil {
-		return err
-	}
-	if err := binary.Read(conn, binary.BigEndian, resp.InfoHash[:]); err != nil {
-		return err
-	}
-	if err := binary.Read(conn, binary.BigEndian, resp.PeerID[:]); err != nil {
-		return err
-	}
-
-	fmt.Printf("Peer ID: %x\n", resp.PeerID)
 	return nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 	"math"
 )
@@ -40,5 +41,18 @@ func requestPkt(pIdx, blkId, pieceLen int) []byte {
 	}
 	log.Printf("requestPkt: [%d, %d, %d, %d]", pIdx, blkId, blkId*blockSize, size)
 	msg.Payload = binary.BigEndian.AppendUint32(msg.Payload, uint32(size))
+	return msg.Pack()
+}
+
+func extensionPkt(exID byte, dict map[string]any) []byte {
+	msg := &PeerMessage{}
+	msg.MsgID = extension
+
+	msg.Payload = append(msg.Payload, exID)
+	d, err := encode(dict)
+	if err != nil {
+		panic(fmt.Sprintf("encode %+v err: %v", dict, err))
+	}
+	msg.Payload = append(msg.Payload, d...)
 	return msg.Pack()
 }
