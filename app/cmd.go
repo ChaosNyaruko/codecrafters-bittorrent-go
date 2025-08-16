@@ -162,7 +162,7 @@ func magnetInfo(l string) error {
 	return nil
 }
 
-func magnetDownloadPiece(l, fname string, pIdx int) error {
+func magnetDownload(l, fname string, pIdx int, fileMode bool) error {
 	m, err := parseMagnet(l)
 	if err != nil {
 		return err
@@ -202,19 +202,33 @@ func magnetDownloadPiece(l, fname string, pIdx int) error {
 		return err
 	}
 
-	pieceData, err := peer.magnetDownloadPiece(pIdx)
-	if err != nil {
-		return err
-	}
 	fd, err := os.Create(fname)
 	if err != nil {
 		return err
 	}
 	defer fd.Close()
-	_, err = fd.Write(pieceData)
-	if err != nil {
+	if !fileMode {
+		pieceData, err := peer.magnetDownloadPiece(pIdx)
+		if err != nil {
+			return err
+		}
+		_, err = fd.Write(pieceData)
+		if err != nil {
+			return err
+		}
 		return err
 	}
-
-	return err
+	// TODO: concurrent downloading
+	for pIdx := range len(peer.magnetMeta.PieceHashes) {
+		log.Printf("[%s]: downloading %d/%d piece", peer.magnetMeta.Name, pIdx+1, len(t.PieceHashes))
+		if p, err := peer.magnetDownloadPiece(pIdx); err != nil {
+			return err
+		} else {
+			_, err := fd.Write(p)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

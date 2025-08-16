@@ -236,32 +236,34 @@ func (p *Peer) handshake(hash []byte) (bool, error) {
 }
 
 func (p *Peer) magnetDownloadPiece(pIdx int) ([]byte, error) {
-	pieceCnt := int(math.Ceil(float64(p.magnetMeta.Length) / float64(p.magnetMeta.PieceLength)))
-	if pieceCnt != len(p.magnetMeta.PieceHashes) {
-		return nil, fmt.Errorf("unmatched pieceCnt: %v/%v", pieceCnt, len(p.magnetMeta.PieceHashes))
-	}
-	pLen := p.magnetMeta.PieceLength
-	if pIdx == pieceCnt-1 {
-		pLen = p.magnetMeta.Length - (pieceCnt-1)*p.magnetMeta.PieceLength
-	}
-	blkCnt := int(math.Ceil(float64(pLen) / float64(blockSize)))
-	res := make([]byte, 0, pLen)
-	for bid := range blkCnt {
-		bs, err := p.downloadBlk(
-			blockTask{
-				idx:  bid,
-				cnt:  pieceCnt,
-				pIdx: pIdx,
-				pLen: pLen,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, bs...)
+	pp := PeerPool{
+		available: make(chan *Peer, 100),
+		pending:   make(chan *Peer, 100),
+		close:     make(chan int),
+		hash:      p.magnetMeta.Hash[:],
 	}
 
-	return res, nil
+	err := pp.reuse(p)
+	if err != nil {
+		return nil, err
+	}
+
+	pd := PieceDownloader{
+		pp:  &pp,
+		t:   p.magnetMeta.Torrent,
+		idx: pIdx,
+	}
+	go pp.run()
+
+	if err := pd.run(); err != nil {
+		return nil, err
+	}
+
+	log.Printf("closing peerpool")
+	close(pp.close)
+	pp.clean()
+
+	return pd.piece, nil
 }
 
 func (p *Peer) exchangeMetadata(hash [20]byte, url string) error {
