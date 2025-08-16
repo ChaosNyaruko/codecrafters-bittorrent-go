@@ -34,11 +34,6 @@ type Client struct {
 	t        Torrent
 }
 
-const (
-	pStateInit = 0
-	pStateHandshaked
-)
-
 type Peer struct {
 	addr             string
 	conn             net.Conn
@@ -238,35 +233,54 @@ func (p *Peer) handshake(hash []byte) (bool, error) {
 }
 
 func (p *Peer) magnetDownloadPiece(pIdx int) ([]byte, error) {
-	// the caller ensures p.magnetMeta is assigned
-	if p.magnetMeta == nil {
-		return nil, fmt.Errorf("the caller should ensure p.magnetMeta is assigned!")
-	}
-	pp := PeerPool{
-		available: make(chan *Peer, 5),
-		pending:   make(chan *Peer, 5),
-		close:     make(chan int),
-		hash:      p.magnetMeta.Hash[:],
-	}
+	pkt := interestedPkt()
 
-	pp.available <- p
-
-	pd := PieceDownloader{
-		pp:  &pp,
-		t:   p.magnetMeta.Torrent,
-		idx: pIdx,
-	}
-	go pp.run()
-
-	if err := pd.run(); err != nil {
+	_, err := p.conn.Write(pkt)
+	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("magnet closing peerpool")
-	close(pp.close)
-	pp.clean()
+	for {
+		msg, err := p.readMsg("unchoke")
+		if err != nil {
+			return nil, err
+		}
 
-	return pd.piece, nil
+		if msg.MsgID == unchoke {
+			// empty payload
+			log.Printf("unchoke recevied")
+			break
+		} else {
+			log.Printf("recevied %v when expecting unchoke", msg.MsgID)
+		}
+	}
+
+	pieceCnt := int(math.Ceil(float64(p.magnetMeta.Length) / float64(p.magnetMeta.PieceLength)))
+	if pieceCnt != len(p.magnetMeta.PieceHashes) {
+		return nil, fmt.Errorf("unmatched pieceCnt: %v/%v", pieceCnt, len(p.magnetMeta.PieceHashes))
+	}
+	pLen := p.magnetMeta.PieceLength
+	if pIdx == pieceCnt-1 {
+		pLen = p.magnetMeta.Length - (pieceCnt-1)*p.magnetMeta.PieceLength
+	}
+	blkCnt := int(math.Ceil(float64(pLen) / float64(blockSize)))
+	res := make([]byte, 0, pLen)
+	for bid := range blkCnt {
+		bs, err := p.downloadBlk(
+			blockTask{
+				idx:  bid,
+				cnt:  pieceCnt,
+				pIdx: pIdx,
+				pLen: pLen,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, bs...)
+	}
+
+	return res, nil
 }
 
 func (p *Peer) exchangeMetadata(hash [20]byte, url string) error {
