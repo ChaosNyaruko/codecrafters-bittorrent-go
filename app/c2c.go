@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	workingThreads = 5
+	workingThreads = 1
 	connPerTarget  = 1
 )
 
@@ -34,19 +34,25 @@ type Client struct {
 	t        Torrent
 }
 
+const (
+	pStateInit = 0
+	pStateHandshaked
+)
+
 type Peer struct {
 	addr             string
 	conn             net.Conn
 	id               [20]byte
 	supportExtension bool
 	extensions       map[string]any
-	magnetMeta       MagnetMeta
+	magnetMeta       *MagnetMeta
 }
 
 func (p *Peer) Close() {
 	log.Printf("close peer: %v", p.id)
 	if p.conn != nil {
 		p.conn.Close()
+		p.conn = nil
 	}
 }
 
@@ -68,6 +74,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 	}
 	log.Printf("try donwloading %+v", task)
 	for {
+		log.Printf("trying reading 'piece' from %s", p.conn.RemoteAddr())
 		msg, err := p.readMsg("piece")
 		if err == io.EOF {
 			log.Printf("[request]connection closed: %v->%v", p.conn.LocalAddr(), p.conn.RemoteAddr())
@@ -87,16 +94,29 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 		case choke:
 			return nil, fmt.Errorf("choked by %v", p.addr)
 		default:
+			log.Printf("recevied msg id in downloadBlk %v", msg.MsgID)
 		}
 		// p.conn.SetDeadline(time.Time{})
 	}
 }
 
 func (p *Peer) connect(hash []byte) error {
-	err := p.handshake(hash, true)
+	supportExtension, err := p.handshake(hash)
 	log.Printf("connecting %v->%v, err: %v", p.conn.LocalAddr(), p.conn.RemoteAddr(), err)
 	if err != nil {
 		p.Close()
+		return err
+	}
+
+	if supportExtension {
+		h := [20]byte(hash)
+		if err := p.exchangeMetadata(h, p.magnetMeta.Tracker); err != nil {
+			return err
+		}
+	}
+
+	_, err = p.waitUntilPeerMessage(bitfield, "bitfield")
+	if err != nil {
 		return err
 	}
 
@@ -125,68 +145,21 @@ func (p *Peer) connect(hash []byte) error {
 	return nil
 }
 
-func (p *Peer) handshake(hash []byte, full bool) error {
-	var conn net.Conn
-	var err error
-	for {
-		conn, err = net.Dial("tcp", p.addr)
-		if err != nil {
-			log.Printf("dial tcp error: %v", err)
-			continue
-		}
-		// conn.SetDeadline(time.Time{})
-		p.conn = conn
-		break
-	}
-
-	pkt := handshakePkt(hash[:], p.supportExtension)
-	_, err = conn.Write(pkt)
+func (p *Peer) handshakeExt(hash []byte) error {
+	supportExtension, err := p.handshake(hash[:])
 	if err != nil {
-		return fmt.Errorf("send to %v err: %v", p.addr, err)
-	}
-
-	resp := &HandShakeMessage{}
-	if err := binary.Read(conn, binary.BigEndian, &resp.Length); err != nil {
 		return err
 	}
-
-	magic := make([]byte, resp.Length)
-	if err := binary.Read(conn, binary.BigEndian, magic); err != nil {
-		return err
-	}
-
-	// resp.MagicHeader = string(magic)
-	if err := binary.Read(conn, binary.BigEndian, resp.Reserved[:]); err != nil {
-		return err
-	}
-	if err := binary.Read(conn, binary.BigEndian, resp.InfoHash[:]); err != nil {
-		return err
-	}
-	if err := binary.Read(conn, binary.BigEndian, resp.PeerID[:]); err != nil {
-		return err
-	}
-
-	copy(p.id[:], resp.PeerID[:])
-	log.Printf("handshake: %v, %v", p.id, p.addr)
-
-	if !full {
+	if !supportExtension {
 		return nil
 	}
-
 	_, err = p.waitUntilPeerMessage(bitfield, "bitfield")
 	if err != nil {
 		return err
 	}
 
-	// TODO: abstract the "Reserved" field
-	if resp.Reserved[5] != 0x10 {
-		return nil
-	}
-
-	log.Printf("%x supports extenstion", p.id)
-
 	ut := map[string]any{"m": map[string]any{"ut_metadata": utMetadata}}
-	pkt = extensionPkt(extensionHandshake, ut)
+	pkt := extensionPkt(extensionHandshake, ut)
 
 	_, err = p.conn.Write(pkt)
 	if err != nil {
@@ -200,15 +173,100 @@ func (p *Peer) handshake(hash []byte, full bool) error {
 	log.Printf("extension handshake resp: %+v, payload: %v", msg, msg.Payload)
 
 	peerExtenstion := msg.Payload[1:]
-	m, err := decodeBencode(string(peerExtenstion))
+	mm, err := decodeBencode(string(peerExtenstion))
 	if err != nil {
 		return err
 	}
 
-	p.extensions = m.(map[string]any)["m"].(map[string]any)
+	p.extensions = mm.(map[string]any)["m"].(map[string]any)
 	log.Printf("peer extensions: %+v", p.extensions)
 
 	return nil
+}
+
+func (p *Peer) handshake(hash []byte) (bool, error) {
+	p.conn = nil
+	for p.conn == nil {
+		conn, err := net.Dial("tcp", p.addr)
+		if err != nil {
+			log.Printf("dial tcp error: %v", err)
+			continue
+		}
+		// conn.SetDeadline(time.Time{})
+		p.conn = conn
+		break
+	}
+
+	pkt := handshakePkt(hash[:], p.supportExtension)
+	_, err := p.conn.Write(pkt)
+	if err != nil {
+		return false, fmt.Errorf("send to %v err: %v", p.addr, err)
+	}
+
+	resp := &HandShakeMessage{}
+	if err := binary.Read(p.conn, binary.BigEndian, &resp.Length); err != nil {
+		return false, err
+	}
+
+	magic := make([]byte, resp.Length)
+	if err := binary.Read(p.conn, binary.BigEndian, magic); err != nil {
+		return false, err
+	}
+
+	// resp.MagicHeader = string(magic)
+	if err := binary.Read(p.conn, binary.BigEndian, resp.Reserved[:]); err != nil {
+		return false, err
+	}
+	if err := binary.Read(p.conn, binary.BigEndian, resp.InfoHash[:]); err != nil {
+		return false, err
+	}
+	if err := binary.Read(p.conn, binary.BigEndian, resp.PeerID[:]); err != nil {
+		return false, err
+	}
+
+	copy(p.id[:], resp.PeerID[:])
+	log.Printf("handshake: %v, %v", p.id, p.addr)
+
+	// TODO: abstract the "Reserved" field
+	if resp.Reserved[5] != 0x10 {
+		return false, nil
+	}
+
+	log.Printf("%x supports extenstion", p.id)
+	return true, nil
+
+}
+
+func (p *Peer) magnetDownloadPiece(pIdx int) ([]byte, error) {
+	// the caller ensures p.magnetMeta is assigned
+	if p.magnetMeta == nil {
+		return nil, fmt.Errorf("the caller should ensure p.magnetMeta is assigned!")
+	}
+	pp := PeerPool{
+		available: make(chan *Peer, 5),
+		pending:   make(chan *Peer, 5),
+		close:     make(chan int),
+		hash:      p.magnetMeta.Hash[:],
+	}
+
+	pp.available <- p
+
+	pd := PieceDownloader{
+		pp:  &pp,
+		t:   p.magnetMeta.Torrent,
+		idx: pIdx,
+	}
+	go pp.run()
+
+	if err := pd.run(); err != nil {
+		return nil, err
+	}
+
+	log.Printf("magnet closing peerpool")
+	close(pp.close)
+	pp.clean()
+
+	return pd.piece, nil
 }
 
 func (p *Peer) exchangeMetadata(hash [20]byte, url string) error {
@@ -259,7 +317,7 @@ func (p *Peer) exchangeMetadata(hash [20]byte, url string) error {
 		Tracker:     url,
 		Hash:        hash,
 	}
-	p.magnetMeta = MagnetMeta{
+	p.magnetMeta = &MagnetMeta{
 		Name:    mdd["name"].(string),
 		Torrent: meta,
 	}
@@ -336,6 +394,7 @@ func (pp *PeerPool) clean() error {
 func (pp *PeerPool) run() error {
 	go func() {
 		for {
+			log.Printf("try to  get a pending")
 			select {
 			case <-pp.close:
 				log.Printf("close channels")
@@ -397,7 +456,9 @@ func (pd *PieceDownloader) run() error {
 			log.Printf("downloader %d started...", i)
 			defer log.Printf("downloader %d stopped...", i)
 			for b := range pd.pendindTask {
+				log.Printf("blk %d, try to get available...", b.idx)
 				p := <-pd.pp.available
+				log.Printf("get an available: %x %s<->%s", p.id, p.conn.LocalAddr(), p.conn.RemoteAddr())
 				if blk, err := p.downloadBlk(b); err != nil {
 					p.Close()
 					pd.pp.reconnect(p)

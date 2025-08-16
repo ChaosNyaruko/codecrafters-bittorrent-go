@@ -296,6 +296,23 @@ func main() {
 			fmt.Fprintf(os.Stderr, "magnet handshake %q err: %v", l, err)
 		}
 
+	case "magnet_download_piece":
+		if os.Args[2] != "-o" {
+			fmt.Fprintf(os.Stderr, "-o should be specified, got: %s", os.Args[2])
+			os.Exit(1)
+		}
+		fname := os.Args[3]
+		l := os.Args[4]
+		pstr := os.Args[5]
+		pIdx, err := strconv.Atoi(pstr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "piece index should be an integer, but got %s", pstr)
+			os.Exit(1)
+		}
+		if err := magnetDownloadPiece(l, fname, pIdx); err != nil {
+			fmt.Fprintf(os.Stderr, "magnet handshake %q err: %v", l, err)
+		}
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
