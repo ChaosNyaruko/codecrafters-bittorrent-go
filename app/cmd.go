@@ -11,7 +11,7 @@ func handShake(target string, t Torrent) error {
 	peer := Peer{
 		addr:             target,
 		conn:             nil,
-		supportExtension: true,
+		supportExtension: false,
 		id:               [20]byte{},
 	}
 	defer peer.Close()
