@@ -127,7 +127,7 @@ func (p *Peer) connect(hash []byte) error {
 		return err
 	}
 
-	if supportExtension {
+	if p.magnetMeta == nil && supportExtension {
 		h := [20]byte(hash)
 		if err := p.exchangeMetadata(h, p.magnetMeta.Tracker); err != nil {
 			return err
