@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -44,11 +45,6 @@ func downloadPiece(targets []Target, t Torrent, pIdx int, fname string) error {
 }
 
 func downloadFile(targets []Target, t Torrent, fname string) error {
-	c := &Client{
-		t:       t,
-		targets: targets,
-	}
-	defer c.Close()
 
 	fd, err := os.Create(fname)
 	if err != nil {
@@ -59,19 +55,38 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 	defer func() {
 		fmt.Printf("downloadFile %v[%dB] cost: %v", fname, t.Length, time.Since(start))
 	}()
-	for pIdx := range len(t.PieceHashes) {
-		log.Printf("[xxxxx]: downloading %d/%d piece", pIdx+1, len(t.PieceHashes))
-		if p, err := c.downloadPiece(pIdx); err != nil {
-			return err
-		} else {
-			_, err := fd.Write(p)
-			if err != nil {
-				return err
+
+	// sz := max(len(t.PieceHashes)/5, 1)
+	res := make([]byte, t.Length)
+	var wg sync.WaitGroup
+	for i := range len(t.PieceHashes) {
+		wg.Add(1)
+		go func(pIdx int) {
+			defer wg.Done()
+			c := &Client{
+				t:       t,
+				targets: targets,
 			}
-		}
+			defer c.Close()
+			// log.Printf("[#%d piece downloader]: [%d,%d)", seq, l, l+sz)
+			a := pIdx * t.PieceLength
+			b := min((pIdx+1)*t.PieceLength, t.Length)
+			// log.Printf("[#%d piece downloader]: downloading %d/%d piece, byte_offset: [%v, %v)",
+			// 	l, pIdx+1, len(t.PieceHashes), a, b)
+			var p []byte
+			for p, err = c.downloadPiece(pIdx); err != nil; {
+				log.Printf("[xxxxx]: downloading %d/%d piece err: %v", pIdx+1, len(t.PieceHashes), err)
+			}
+			copy(res[a:b], p[:])
+		}(i)
 
 	}
-	return err
+	wg.Wait()
+	_, err = fd.Write(res)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func parseMagnetlink(l string) error {
