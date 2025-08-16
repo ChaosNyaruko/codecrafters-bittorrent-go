@@ -453,9 +453,9 @@ func (pd *PieceDownloader) run() error {
 			log.Printf("downloader %d started...", i)
 			defer log.Printf("downloader %d stopped...", i)
 			for b := range pd.pendindTask {
-				log.Printf("blk %d, try to get available...", b.idx)
+				// log.Printf("blk %d, try to get available...", b.idx)
 				p := <-pd.pp.available
-				log.Printf("get an available: %x %s<->%s", p.id, p.conn.LocalAddr(), p.conn.RemoteAddr())
+				// log.Printf("get an available: %x %s<->%s", p.id, p.conn.LocalAddr(), p.conn.RemoteAddr())
 				if blk, err := p.downloadBlk(b); err != nil {
 					p.Close()
 					pd.pp.reconnect(p)
