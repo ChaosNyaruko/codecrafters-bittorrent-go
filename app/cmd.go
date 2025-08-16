@@ -69,7 +69,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 				targets: targets,
 			}
 			defer c.Close()
-			// log.Printf("[#%d piece downloader]: [%d,%d)", seq, l, l+sz)
+			log.Printf("[#%d piece downloader]: [%d,%d)/%d", i, start, end, len(t.PieceHashes))
 			for pIdx := start; pIdx < end && pIdx < len(t.PieceHashes); pIdx++ {
 				a := pIdx * t.PieceLength
 				b := min((pIdx+1)*t.PieceLength, t.Length)
@@ -81,7 +81,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 				}
 				copy(res[a:b], p[:])
 			}
-		}(i*sz, min((i+1)*sz, len(t.PieceHashes)-i*sz))
+		}(i*sz, max((i+1)*sz, len(t.PieceHashes)-i*sz))
 
 	}
 	wg.Wait()
