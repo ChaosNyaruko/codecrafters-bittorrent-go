@@ -220,6 +220,7 @@ func (p *Peer) exchangeMetadata() error {
 		return err
 	}
 
+	return nil
 	msg, err := p.waitUntilPeerMessage(extension, "extension metadata resp")
 	if err != nil {
 		return err
