@@ -76,7 +76,7 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 				// log.Printf("[#%d piece downloader]: downloading %d/%d piece, byte_offset: [%v, %v)",
 				// 	l, pIdx+1, len(t.PieceHashes), a, b)
 				var p []byte
-				for p, err = c.downloadPiece(pIdx); err != nil; {
+				for p, err = c.downloadPiece(pIdx); err != nil; p, err = c.downloadPiece(pIdx) {
 					log.Printf("[xxxxx]: downloading %d/%d piece err: %v", pIdx+1, len(t.PieceHashes), err)
 				}
 				copy(res[a:b], p[:])
