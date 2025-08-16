@@ -117,3 +117,41 @@ func magnetHandshake(l string) error {
 	fmt.Printf("Peer Metadata Extension ID: %d\n", peer.extensions["ut_metadata"].(int))
 	return nil
 }
+
+func magnetInfo(l string) error {
+	m, err := parseMagnet(l)
+	if err != nil {
+		return err
+	}
+	h, err := hex.DecodeString(m.hash)
+	if err != nil || len(h) != 20 {
+		return fmt.Errorf("decode hash[%v] err: %v", m.hash, err)
+	}
+	hash := [20]byte{}
+	copy(hash[:], h)
+	t := Torrent{
+		Tracker:     m.tracker,
+		Length:      0,
+		Hash:        hash,
+		PieceLength: 0,
+		PieceHashes: []string{},
+	}
+	targets, err := getPeersFromTracker(t)
+	if err != nil {
+		return fmt.Errorf("get peers from tracker %q err: %v", t.Tracker, err)
+	}
+
+	// NOTE: the test suite ensures it has and only has one target.
+	p := targets[0]
+	peer := Peer{
+		addr:             p.String(),
+		conn:             nil,
+		supportExtension: true,
+		id:               [20]byte{},
+	}
+	defer peer.Close()
+	if err := peer.handshake(t.Hash[:], true); err != nil {
+		return err
+	}
+	return nil
+}

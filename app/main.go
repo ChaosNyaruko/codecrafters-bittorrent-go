@@ -290,6 +290,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "magnet handshake %q err: %v", l, err)
 		}
 
+	case "magnet_info":
+		l := os.Args[2]
+		if err := magnetInfo(l); err != nil {
+			fmt.Fprintf(os.Stderr, "magnet handshake %q err: %v", l, err)
+		}
+
 	default:
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
