@@ -15,7 +15,7 @@ func handShake(target string, t Torrent) error {
 		id:               [20]byte{},
 	}
 	defer peer.Close()
-	if err := peer.handshake(t.Hash[:]); err != nil {
+	if err := peer.handshake(t.Hash[:], false); err != nil {
 		return err
 	}
 	return nil
@@ -109,7 +109,7 @@ func magnetHandshake(l string) error {
 		id:               [20]byte{},
 	}
 	defer peer.Close()
-	if err := peer.handshake(t.Hash[:]); err != nil {
+	if err := peer.handshake(t.Hash[:], true); err != nil {
 		return err
 	}
 	fmt.Printf("Peer ID: %x\n", peer.id)

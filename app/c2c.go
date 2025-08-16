@@ -91,7 +91,7 @@ func (p *Peer) downloadBlk(task blockTask) ([]byte, error) {
 }
 
 func (p *Peer) connect(hash []byte) error {
-	err := p.handshake(hash)
+	err := p.handshake(hash, true)
 	log.Printf("connecting %v->%v, err: %v", p.conn.LocalAddr(), p.conn.RemoteAddr(), err)
 	if err != nil {
 		p.Close()
@@ -123,7 +123,7 @@ func (p *Peer) connect(hash []byte) error {
 	return nil
 }
 
-func (p *Peer) handshake(hash []byte) error {
+func (p *Peer) handshake(hash []byte, full bool) error {
 	var conn net.Conn
 	var err error
 	for {
@@ -166,6 +166,10 @@ func (p *Peer) handshake(hash []byte) error {
 
 	copy(p.id[:], resp.PeerID[:])
 	log.Printf("handshake: %v, %v", p.id, p.addr)
+
+	if !full {
+		return nil
+	}
 
 	_, err = p.waitUntilPeerMessage(bitfield, "bitfield")
 	if err != nil {
