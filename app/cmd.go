@@ -56,12 +56,13 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 		fmt.Printf("downloadFile %v[%dB] cost: %v", fname, t.Length, time.Since(start))
 	}()
 
-	// sz := max(len(t.PieceHashes)/5, 1)
+	sz := max(len(t.PieceHashes)/5, 1)
+	const threadNum = 5
 	res := make([]byte, t.Length)
 	var wg sync.WaitGroup
-	for i := range len(t.PieceHashes) {
+	for i := range threadNum {
 		wg.Add(1)
-		go func(pIdx int) {
+		go func(start, end int) {
 			defer wg.Done()
 			c := &Client{
 				t:       t,
@@ -69,16 +70,18 @@ func downloadFile(targets []Target, t Torrent, fname string) error {
 			}
 			defer c.Close()
 			// log.Printf("[#%d piece downloader]: [%d,%d)", seq, l, l+sz)
-			a := pIdx * t.PieceLength
-			b := min((pIdx+1)*t.PieceLength, t.Length)
-			// log.Printf("[#%d piece downloader]: downloading %d/%d piece, byte_offset: [%v, %v)",
-			// 	l, pIdx+1, len(t.PieceHashes), a, b)
-			var p []byte
-			for p, err = c.downloadPiece(pIdx); err != nil; {
-				log.Printf("[xxxxx]: downloading %d/%d piece err: %v", pIdx+1, len(t.PieceHashes), err)
+			for pIdx := start; pIdx < end && pIdx < len(t.PieceHashes); pIdx++ {
+				a := pIdx * t.PieceLength
+				b := min((pIdx+1)*t.PieceLength, t.Length)
+				// log.Printf("[#%d piece downloader]: downloading %d/%d piece, byte_offset: [%v, %v)",
+				// 	l, pIdx+1, len(t.PieceHashes), a, b)
+				var p []byte
+				for p, err = c.downloadPiece(pIdx); err != nil; {
+					log.Printf("[xxxxx]: downloading %d/%d piece err: %v", pIdx+1, len(t.PieceHashes), err)
+				}
+				copy(res[a:b], p[:])
 			}
-			copy(res[a:b], p[:])
-		}(i)
+		}(i*sz, min((i+1)*sz, len(t.PieceHashes)-i*sz))
 
 	}
 	wg.Wait()
